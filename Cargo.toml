@@ -1,0 +1,47 @@
+[package]
+name = "confined"
+version = "0.4.10"
+authors = ["Dr Maxim Orlovsky <orlovsky@ubideco.org>"]
+description = "Confined collections with compile-time size guarantees"
+repository = "https://github.com/rust-amplify/confined"
+homepage = "https://docs.rs/confined"
+keywords = ["generics", "core", "collections", "patterns"]
+categories = ["data-structures", "rust-patterns", "no-std"]
+readme = "README.md"
+license = "Apache-2.0"
+edition = "2021" # TODO: Update the edition in version 1.0
+rust-version = "1.75.0" # Due to the use of `impl` in trait return types
+exclude = [".github"]
+
+[lib]
+name = "confined"
+
+[dependencies]
+amplify_num = { version = "0.5.3", default-features = false, features = ["alloc"] }
+collections = { version = "0.1.0", default-features = false }
+
+ascii = { version = "1.1.0", default-features = false, optional = true }
+indexmap = { version = "2.11.4", default-features = false, optional = true }
+
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[features]
+default = ["std", "hex"]
+all = ["std", "hex", "ascii", "indexmap", "serde"]
+
+std = ["collections/std", "ascii?/std", "indexmap?/std", "amplify_num/std"]
+hex = ["amplify_num/hex"]
+
+ascii = ["dep:ascii", "collections/ascii"]
+indexmap = ["dep:indexmap", "collections/indexmap"]
+
+serde = ["dep:serde", "ascii?/serde", "indexmap?/serde"]
+
+[package.metadata.docs.rs]
+features = ["all"]
+
+[patch.crates-io]
+collections = { git = "https://github.com/rust-amplify/collections" }

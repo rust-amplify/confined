@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Written in 2022-2026 by Dr. Maxim Orlovsky <orlovsky@ubideco.org>
+//
+// Copyright 2022-2026 Laboratories for Ubiquitous and Deterministic Computing,
+// Institute for Distributed and Cognitive Computing (InDCS), Switzerland.
+// All rights reserved.
+//
+// Copyright (C) 2022-2026 Dr Maxim Orlovsky.
+// All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at <http://www.apache.org/licenses/LICENSE-2.0>
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+use alloc::vec::Vec;
+
+use crate::{Confined, Error, ZERO};
+
+impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MAX_LEN> {
+    /// Constructs confinement out of slice of items. Does allocation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the size of the slice doesn't match the confinement type
+    /// bounds.
+    #[inline]
+    pub fn from_slice_checked(slice: &[T]) -> Self
+    where
+        T: Clone,
+    {
+        assert!(slice.len() > MIN_LEN && slice.len() <= MAX_LEN);
+        Self(slice.to_vec())
+    }
+
+    #[deprecated(since = "4.7.0", note = "use `from_slice_checked`")]
+    #[inline]
+    pub fn from_slice_unsafe(slice: &[T]) -> Self
+    where
+        T: Clone,
+    {
+        Self::from_slice_checked(slice)
+    }
+
+    /// Constructs confinement out of slice of items. Does allocation.
+    #[inline]
+    pub fn try_from_slice(slice: &[T]) -> Result<Self, Error>
+    where
+        T: Clone,
+    {
+        Self::try_from(slice.to_vec())
+    }
+
+    /// Returns slice representation of the vec.
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+
+    /// Converts into the inner unconfined vector.
+    #[inline]
+    pub fn into_vec(self) -> Vec<T> {
+        self.0
+    }
+
+    /* We had to delete it due to the naming conflict.
+       Use `Index::get_mut(vec)` instead.
+
+    /// Gets the mutable element of a vector
+    #[inline]
+    pub fn get_mut<I>(&mut self, index: I) -> Option<&mut I::Output>
+    where
+        I: SliceIndex<[T]>,
+    {
+        self.0.get_mut(index)
+    }
+     */
+}
+
+impl<T, const MAX_LEN: usize> Confined<Vec<T>, ZERO, MAX_LEN> {
+    /// Removes the last element from a vector and returns it, or [`None`] if it
+    /// is empty.
+    #[inline]
+    pub fn pop(&mut self) -> Option<T> {
+        self.0.pop()
+    }
+}
+
+impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MAX_LEN> {
+    /// Removes an element from the vector at a given index. Errors if the index
+    /// exceeds the number of elements in the vector, of if the new vector
+    /// length will be less than the confinement requirement. Returns the
+    /// removed element otherwise.
+    pub fn remove(&mut self, index: usize) -> Result<T, Error> {
+        self.check_boundary(index)?;
+        self.check_undersize()?;
+        Ok(self.0.remove(index))
+    }
+
+    /// Returns an iterator over the slice.
+    ///
+    /// The iterator yields all items from start to end.
+    pub fn iter(&self) -> core::slice::Iter<'_, T> {
+        self.0.iter()
+    }
+}

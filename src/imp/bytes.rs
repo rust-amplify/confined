@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Written in 2022-2026 by Dr. Maxim Orlovsky <orlovsky@ubideco.org>
+//
+// Copyright 2022-2026 Laboratories for Ubiquitous and Deterministic Computing,
+// Institute for Distributed and Cognitive Computing (InDCS), Switzerland.
+// All rights reserved.
+//
+// Copyright (C) 2022-2026 Dr Maxim Orlovsky.
+// All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at <http://www.apache.org/licenses/LICENSE-2.0>
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+#[cfg(feature = "std")]
+mod io {
+    use std::io;
+
+    use crate::{Confined, ZERO};
+
+    impl<const MAX_LEN: usize> io::Write for Confined<Vec<u8>, ZERO, MAX_LEN> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if buf.is_empty() {
+                return Ok(0);
+            }
+            let len = self.len();
+            let buf_len = buf.len();
+            if buf_len > MAX_LEN || len >= MAX_LEN || len.saturating_add(buf_len) > MAX_LEN {
+                return Err(io::Error::from(io::ErrorKind::OutOfMemory));
+            }
+            self.0.extend(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            // Do nothing
+            Ok(())
+        }
+    }
+}
+
+#[cfg(feature = "hex")]
+mod hex {
+    use alloc::vec::Vec;
+    use core::fmt::{self, Formatter, LowerHex, UpperHex};
+
+    use amplify_num::hex::{self, FromHex, ToHex};
+
+    use crate::Confined;
+
+    impl<const MIN_LEN: usize, const MAX_LEN: usize> LowerHex for Confined<Vec<u8>, MIN_LEN, MAX_LEN> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            f.write_str(&self.0.to_hex())
+        }
+    }
+
+    impl<const MIN_LEN: usize, const MAX_LEN: usize> UpperHex for Confined<Vec<u8>, MIN_LEN, MAX_LEN> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            f.write_str(&self.0.to_hex().to_uppercase())
+        }
+    }
+
+    impl<const MIN_LEN: usize, const MAX_LEN: usize> FromHex for Confined<Vec<u8>, MIN_LEN, MAX_LEN> {
+        fn from_byte_iter<I>(iter: I) -> Result<Self, hex::Error>
+        where
+            I: Iterator<Item = Result<u8, hex::Error>> + ExactSizeIterator + DoubleEndedIterator,
+        {
+            Vec::<u8>::from_byte_iter(iter).map(Self)
+        }
+    }
+}
