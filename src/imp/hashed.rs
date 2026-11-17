@@ -22,19 +22,43 @@
 use std::collections::{HashMap, HashSet, hash_map};
 use std::hash::{BuildHasher, Hash};
 
-use crate::{Confined, Entry, Error, ItemLen, ViaCollection, ZERO};
+use collections::{CollectionCapacity, CollectionMap, CollectionSet};
 
-impl<T: Hash + Eq, S: BuildHasher + Default> ItemLen for HashSet<T, S> {
-    type Item = T;
-    type Access = ViaCollection;
+use crate::{Confined, Entry, Error, ItemLen, ZERO};
+
+impl<T: Hash + Eq, S: BuildHasher> ItemLen for HashSet<T, S> {
+    fn item_growth(&self, item: &T) -> usize {
+        usize::from(!CollectionSet::contains(self, item))
+    }
+    fn try_push(&mut self, item: T) -> Result<(), T> {
+        if self.contains(&item) {
+            Ok(())
+        } else {
+            CollectionCapacity::try_push(self, item)
+        }
+    }
 }
 
-impl<K: Hash + Eq, V, S: BuildHasher + Default> ItemLen for HashMap<K, V, S> {
-    type Item = (K, V);
-    type Access = ViaCollection;
+impl<K: Hash + Eq, V, S: BuildHasher> ItemLen for HashMap<K, V, S> {
+    fn item_growth(&self, item: &(K, V)) -> usize {
+        usize::from(!CollectionMap::contains_key(self, &item.0))
+    }
+    fn try_push(&mut self, item: (K, V)) -> Result<(), (K, V)> {
+        if let Some(value) = self.get_mut(&item.0) {
+            *value = item.1;
+            Ok(())
+        } else {
+            CollectionCapacity::try_push(self, item)
+        }
+    }
+
+    fn prepare_entry(&mut self) -> Result<(), Error> {
+        CollectionCapacity::try_reserve(self, 1)
+            .map_err(|_| Error::CapacityExceeded { len: self.len() })
+    }
 }
 
-impl<'a, K: Hash + Eq, V, S: BuildHasher + Default> Entry<'a, HashMap<K, V, S>> {
+impl<'a, K: Hash + Eq, V, S: BuildHasher> Entry<'a, HashMap<K, V, S>> {
     /// Ensures a value is in the entry by inserting, if empty, the result of
     /// the default function, which gets a reference to the key of the entry.
     /// Returns a mutable reference to the value in the entry.
@@ -43,7 +67,7 @@ impl<'a, K: Hash + Eq, V, S: BuildHasher + Default> Entry<'a, HashMap<K, V, S>> 
     }
 }
 
-impl<T: Hash + Eq, S: BuildHasher + Default, const MIN_LEN: usize, const MAX_LEN: usize>
+impl<T: Hash + Eq, S: BuildHasher, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<HashSet<T, S>, MIN_LEN, MAX_LEN>
 {
     /// Removes an element from the set. Errors if the index exceeds the number
@@ -62,7 +86,7 @@ impl<T: Hash + Eq, S: BuildHasher + Default, const MIN_LEN: usize, const MAX_LEN
         self.take_from_set(elem, |set, elem| set.take(elem))
     }
 }
-impl<K: Hash + Eq, V, S: BuildHasher + Default, const MIN_LEN: usize, const MAX_LEN: usize>
+impl<K: Hash + Eq, V, S: BuildHasher, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<HashMap<K, V, S>, MIN_LEN, MAX_LEN>
 {
     /// Removes an element from the map. Errors if the index exceeds the number
@@ -136,7 +160,7 @@ impl<K: Hash + Eq, V, S: BuildHasher + Default, const MIN_LEN: usize, const MAX_
     }
 }
 
-impl<K: Hash + Eq, V, S: BuildHasher + Default, const MAX_LEN: usize>
+impl<K: Hash + Eq, V, S: BuildHasher, const MAX_LEN: usize>
     Confined<HashMap<K, V, S>, ZERO, MAX_LEN>
 {
     /// Clears the map, returning all key-value pairs as an iterator. Keeps the

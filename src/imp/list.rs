@@ -21,12 +21,9 @@
 
 use alloc::collections::LinkedList;
 
-use crate::{Confined, Error, ItemLen, ViaCollection, ZERO};
+use crate::{Confined, Error, ItemLen, ZERO};
 
-impl<T> ItemLen for LinkedList<T> {
-    type Item = T;
-    type Access = ViaCollection;
-}
+impl<T> ItemLen for LinkedList<T> {}
 
 impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<LinkedList<T>, MIN_LEN, MAX_LEN> {
     /// Prepends an element to the list. Errors if the new list length exceeds

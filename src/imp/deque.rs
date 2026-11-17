@@ -22,11 +22,14 @@
 use alloc::collections::vec_deque::{self, VecDeque};
 use core::ops::RangeBounds;
 
-use crate::{Confined, Error, ItemLen, ViaCollection, ZERO};
+use collections::CollectionCapacity;
+
+use crate::{Confined, Error, ItemLen, ZERO};
 
 impl<T> ItemLen for VecDeque<T> {
-    type Item = T;
-    type Access = ViaCollection;
+    fn try_push(&mut self, item: T) -> Result<(), T> {
+        CollectionCapacity::try_push(self, item)
+    }
 }
 
 /// Methods which can't report an error, so they exist only for the deques
@@ -151,7 +154,7 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<VecDeque<T>, MIN_LE
     /// Prepends an element to the deque. Errors if the new collection length
     /// will not fit the confinement requirements.
     pub fn push_front(&mut self, elem: T) -> Result<(), Error> {
-        self.check_oversize()?;
+        self.try_reserve(1)?;
         self.0.push_front(elem);
         Ok(())
     }
@@ -159,9 +162,7 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<VecDeque<T>, MIN_LE
     /// Appends an element to the deque. Errors if the new collection length
     /// will not fit the confinement requirements.
     pub fn push_back(&mut self, elem: T) -> Result<(), Error> {
-        self.check_oversize()?;
-        self.0.push_back(elem);
-        Ok(())
+        self.push(elem)
     }
 
     /// Removes an element from the deque at a given index. Errors if the index

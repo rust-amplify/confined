@@ -22,16 +22,20 @@
 use alloc::collections::{BTreeMap, BTreeSet, btree_map};
 use core::ops::RangeBounds;
 
-use crate::{Confined, Entry, Error, ItemLen, ViaCollection, ZERO};
+use collections::{CollectionMap, CollectionSet};
+
+use crate::{Confined, Entry, Error, ItemLen, ZERO};
 
 impl<T: Ord> ItemLen for BTreeSet<T> {
-    type Item = T;
-    type Access = ViaCollection;
+    fn item_growth(&self, item: &T) -> usize {
+        usize::from(!CollectionSet::contains(self, item))
+    }
 }
 
 impl<K: Ord, V> ItemLen for BTreeMap<K, V> {
-    type Item = (K, V);
-    type Access = ViaCollection;
+    fn item_growth(&self, item: &(K, V)) -> usize {
+        usize::from(!CollectionMap::contains_key(self, &item.0))
+    }
 }
 
 impl<'a, K: Ord, V> Entry<'a, BTreeMap<K, V>> {
@@ -145,18 +149,19 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
         &mut self,
         other: &mut Confined<BTreeMap<K, V>, ZERO, MAX_LEN2>,
     ) -> Result<(), Error> {
-        let mut new_len = self.len().saturating_add(other.len());
-        if new_len > MAX_LEN {
-            // The keys present in both maps do not add to the length
-            new_len -= other
+        let room = MAX_LEN - self.len();
+        let growth = if other.len() <= room {
+            other.len()
+        } else {
+            other
                 .0
                 .keys()
-                .filter(|key| self.0.contains_key(key))
-                .count();
-        }
-        if new_len > MAX_LEN {
+                .filter(|key| !self.0.contains_key(key))
+                .count()
+        };
+        if growth > room {
             return Err(Error::Oversize {
-                len: new_len,
+                len: self.len().saturating_add(growth),
                 max_len: MAX_LEN,
             });
         }
@@ -170,17 +175,25 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
     /// # Errors
     ///
     /// Errors if the minimum confinement is not met for either of the
-    /// collections.
+    /// collections, or the right-hand collection exceeds its maximum.
+    ///
+    /// Keys and values are cloned before any originals are removed, so a
+    /// comparison or cloning panic leaves the original map unchanged. This
+    /// avoids the panic-unsafe native split on Rust 1.100. Dropping originals
+    /// may still panic, but cannot take the map below its minimum length.
     pub fn split_off<const MIN_LEN2: usize, const MAX_LEN2: usize>(
         &mut self,
         key: &K,
-    ) -> Result<Confined<BTreeMap<K, V>, MIN_LEN2, MAX_LEN2>, Error> {
-        let mut other = self.0.split_off(key);
-        let len1 = self.0.len();
-        let len2 = other.len();
+    ) -> Result<Confined<BTreeMap<K, V>, MIN_LEN2, MAX_LEN2>, Error>
+    where
+        K: Clone,
+        V: Clone,
+    {
+        const { assert!(MIN_LEN2 <= MAX_LEN2, "invalid confinement bounds") };
+        let len2 = self.0.range(key..).count();
+        let len1 = self.len() - len2;
 
         if len1 < MIN_LEN {
-            self.0.append(&mut other);
             return Err(Error::Undersize {
                 len: len1,
                 min_len: MIN_LEN,
@@ -188,7 +201,6 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
         }
 
         if len2 < MIN_LEN2 {
-            self.0.append(&mut other);
             return Err(Error::Undersize {
                 len: len2,
                 min_len: MIN_LEN2,
@@ -196,13 +208,20 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
         }
 
         if len2 > MAX_LEN2 {
-            self.0.append(&mut other);
             return Err(Error::Oversize {
                 len: len2,
                 max_len: MAX_LEN2,
             });
         }
 
+        let other = self
+            .0
+            .range(key..)
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        for _ in 0..len2 {
+            self.0.pop_last();
+        }
         Ok(Confined(other))
     }
 

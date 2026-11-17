@@ -21,21 +21,44 @@
 
 use core::hash::{BuildHasher, Hash};
 
+use collections::{CollectionCapacity, CollectionMap, CollectionSet};
 use indexmap::{IndexMap, IndexSet, map};
 
-use crate::{Confined, Entry, Error, ItemLen, ViaCollection};
+use crate::{Confined, Entry, Error, ItemLen};
 
-impl<T: Eq + Hash, S: BuildHasher + Default> ItemLen for IndexSet<T, S> {
-    type Item = T;
-    type Access = ViaCollection;
+impl<T: Eq + Hash, S: BuildHasher> ItemLen for IndexSet<T, S> {
+    fn item_growth(&self, item: &T) -> usize {
+        usize::from(!CollectionSet::contains(self, item))
+    }
+    fn try_push(&mut self, item: T) -> Result<(), T> {
+        if self.contains(&item) {
+            Ok(())
+        } else {
+            CollectionCapacity::try_push(self, item)
+        }
+    }
 }
 
-impl<K: Eq + Hash, V, S: BuildHasher + Default> ItemLen for IndexMap<K, V, S> {
-    type Item = (K, V);
-    type Access = ViaCollection;
+impl<K: Eq + Hash, V, S: BuildHasher> ItemLen for IndexMap<K, V, S> {
+    fn item_growth(&self, item: &(K, V)) -> usize {
+        usize::from(!CollectionMap::contains_key(self, &item.0))
+    }
+    fn try_push(&mut self, item: (K, V)) -> Result<(), (K, V)> {
+        if let Some(value) = self.get_mut(&item.0) {
+            *value = item.1;
+            Ok(())
+        } else {
+            CollectionCapacity::try_push(self, item)
+        }
+    }
+
+    fn prepare_entry(&mut self) -> Result<(), Error> {
+        CollectionCapacity::try_reserve(self, 1)
+            .map_err(|_| Error::CapacityExceeded { len: self.len() })
+    }
 }
 
-impl<'a, K: Eq + Hash, V, S: BuildHasher + Default> Entry<'a, IndexMap<K, V, S>> {
+impl<'a, K: Eq + Hash, V, S: BuildHasher> Entry<'a, IndexMap<K, V, S>> {
     /// Ensures a value is in the entry by inserting, if empty, the result of
     /// the default function, which gets a reference to the key of the entry.
     /// Returns a mutable reference to the value in the entry.
@@ -44,7 +67,7 @@ impl<'a, K: Eq + Hash, V, S: BuildHasher + Default> Entry<'a, IndexMap<K, V, S>>
     }
 }
 
-impl<T: Eq + Hash, S: BuildHasher + Default, const MIN_LEN: usize, const MAX_LEN: usize>
+impl<T: Eq + Hash, S: BuildHasher, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<IndexSet<T, S>, MIN_LEN, MAX_LEN>
 {
     /// Removes a value from the set, returning whether the value was at the
@@ -68,7 +91,7 @@ impl<T: Eq + Hash, S: BuildHasher + Default, const MIN_LEN: usize, const MAX_LEN
     }
 }
 
-impl<K: Eq + Hash, V, S: BuildHasher + Default, const MIN_LEN: usize, const MAX_LEN: usize>
+impl<K: Eq + Hash, V, S: BuildHasher, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<IndexMap<K, V, S>, MIN_LEN, MAX_LEN>
 {
     /// Removes a key from the map, returning the value at the key if the key

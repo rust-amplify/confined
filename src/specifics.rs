@@ -22,26 +22,23 @@
 use core::ops::{Index, IndexMut};
 
 use amplify_num::u24;
-use collections::{Collection, CollectionAlloc, CollectionMap};
+use collections::{Collection, CollectionAlloc, CollectionBase, CollectionCapacity, CollectionMap};
 
-use super::{Confined, ItemLen, U8MAX, U16MAX, U24MAX, U32MAX, ZERO};
-use crate::access::{Access, ViaCollectionAlloc};
+use super::{Confined, Error, ItemLen, U8MAX, U16MAX, U24MAX, U32MAX, ZERO};
 
 impl<C, const MAX_LEN: usize> Confined<C, ZERO, MAX_LEN>
 where
     C: ItemLen,
-    C::Access: Access<C, Item = <C as ItemLen>::Item>,
 {
     /// Removes all elements from the confined collection.
     pub fn clear(&mut self) {
-        C::Access::clear(&mut self.0)
+        CollectionBase::clear(&mut self.0)
     }
 }
 
 impl<C, const MAX_LEN: usize> Confined<C, ZERO, MAX_LEN>
 where
     C: ItemLen + Default,
-    C::Access: Access<C, Item = <C as ItemLen>::Item>,
 {
     /// Constructs a new confinement containing no elements.
     pub fn new() -> Self {
@@ -51,32 +48,55 @@ where
 
 impl<C, const MAX_LEN: usize> Confined<C, ZERO, MAX_LEN>
 where
-    C: Collection + ItemLen + Default,
-    C::Access: Access<C, Item = <C as ItemLen>::Item>,
+    C: Collection + ItemLen,
 {
     /// Constructs a new confinement containing no elements, but with a
     /// pre-allocated storage for the `capacity` of elements.
     pub fn with_capacity(capacity: usize) -> Self {
-        Self(C::with_capacity(capacity))
+        Self::from_checked(C::with_capacity(capacity.min(MAX_LEN)))
+    }
+
+    /// Fallibly constructs an empty confinement with reserved capacity.
+    pub fn try_with_capacity(capacity: usize) -> Result<Self, Error>
+    where
+        C: CollectionCapacity,
+    {
+        let mut collection = C::default();
+        let capacity = capacity.min(MAX_LEN);
+        CollectionCapacity::try_reserve(&mut collection, capacity)
+            .map_err(|_| Error::CapacityExceeded { len: 0 })?;
+        Self::try_from(collection)
     }
 }
 
 impl<C, const MAX_LEN: usize> Confined<C, ZERO, MAX_LEN>
 where
-    C: CollectionAlloc + ItemLen<Access = ViaCollectionAlloc, Item = <C as CollectionAlloc>::Item>,
-    C::Access: Access<C, Item = <C as ItemLen>::Item>,
+    C: CollectionAlloc + ItemLen,
 {
     /// Constructs a new confinement containing no elements, using the
     /// supplied allocator.
     pub fn new_in(allocator: C::Allocator) -> Self {
-        Self(C::new_in(allocator))
+        Self::from_checked(C::new_in(allocator))
     }
 
     /// Constructs a new confinement containing no elements, with the supplied
     /// allocator and pre-allocated storage for `min(capacity, MAX_LEN)`
     /// elements.
     pub fn with_capacity_in(capacity: usize, allocator: C::Allocator) -> Self {
-        Self(C::with_capacity_in(capacity.min(MAX_LEN), allocator))
+        Self::from_checked(C::with_capacity_in(capacity.min(MAX_LEN), allocator))
+    }
+
+    /// Fallibly constructs an empty confinement with reserved capacity and the
+    /// supplied allocator.
+    pub fn try_with_capacity_in(capacity: usize, allocator: C::Allocator) -> Result<Self, Error>
+    where
+        C: CollectionCapacity,
+    {
+        let mut collection = C::new_in(allocator);
+        let capacity = capacity.min(MAX_LEN);
+        CollectionCapacity::try_reserve(&mut collection, capacity)
+            .map_err(|_| Error::CapacityExceeded { len: 0 })?;
+        Self::try_from(collection)
     }
 }
 
@@ -85,21 +105,20 @@ where
     C: ItemLen + Default,
 {
     fn default() -> Self {
-        Self(C::default())
+        Self::from_checked(C::default())
     }
 }
 
 impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
 where
     C: Default + ItemLen,
-    C::Access: Access<C, Item = C::Item>,
 {
     /// Constructs a confinement containing a single element.
     ///
     /// The bounds must allow exactly one item: `MIN_LEN <= 1 <= MAX_LEN`.
     /// The upper bound must also leave room for an item of any size. For most
     /// collections it means `MAX_LEN >= 1`. The length of a
-    /// [`String`](alloc::string::String) is measured in bytes, and a single
+    /// `String` is measured in bytes, and a single
     /// `char` may take up to four of them, so a string needs `MAX_LEN >= 4`.
     ///
     /// A type which doesn't meet this requirement fails to build. The failure
@@ -107,9 +126,12 @@ where
     /// `cargo check`.
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let vec = Confined::<Vec<u8>, 1, 1>::with(7);
     /// assert_eq!(vec.as_slice(), &[7]);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -119,9 +141,12 @@ where
     /// ```
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let vec = Confined::<Vec<u8>, 0, 1>::with(7);
     /// assert_eq!(vec.as_slice(), &[7]);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -131,9 +156,12 @@ where
     /// ```
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let s = Confined::<String, 1, 4>::with('a');
     /// assert_eq!(s.as_str(), "a");
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -155,24 +183,30 @@ where
             )
         };
         let mut c = C::default();
-        C::Access::push(&mut c, elem);
-        Self(c)
+        assert!(
+            ItemLen::try_push(&mut c, elem).is_ok(),
+            "collection has no capacity"
+        );
+        Self::from_checked(c)
     }
 }
 
 impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
 where
-    C: CollectionAlloc + ItemLen<Access = ViaCollectionAlloc, Item = <C as CollectionAlloc>::Item>,
+    C: CollectionAlloc + ItemLen,
 {
     /// Constructs a confinement containing a single element with the supplied
     /// allocator. Like [`Self::with`], the bounds must allow exactly one item
     /// and leave room for the largest item of the collection.
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// # use std::alloc::System;
     /// let values = Confined::<Vec<u8, System>, 1, 3>::with_in(7, System);
     /// assert_eq!(values.as_slice(), &[7]);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -186,10 +220,7 @@ where
     /// # use std::alloc::System;
     /// let _ = Confined::<Vec<u8, System>, 0, 0>::with_in(7, System);
     /// ```
-    pub fn with_in(
-        elem: <C as ItemLen>::Item,
-        allocator: <C as CollectionAlloc>::Allocator,
-    ) -> Self {
+    pub fn with_in(elem: C::Item, allocator: <C as CollectionAlloc>::Allocator) -> Self {
         const {
             assert!(
                 MIN_LEN <= 1 && 1 <= MAX_LEN,
@@ -203,8 +234,11 @@ where
             )
         };
         let mut c = C::new_in(allocator);
-        C::Access::push(&mut c, elem);
-        Self(c)
+        assert!(
+            ItemLen::try_push(&mut c, elem).is_ok(),
+            "collection has no capacity"
+        );
+        Self::from_checked(c)
     }
 }
 
@@ -221,9 +255,12 @@ where
     /// `as_unconfined().first()` when the optional result is needed.
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let values = Confined::<Vec<u8>, 2, 4>::try_from(vec![1, 2]).unwrap();
     /// assert_eq!(*values.first(), 1);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -245,9 +282,12 @@ where
     /// `as_unconfined().last()` when the optional result is needed.
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let values = Confined::<Vec<u8>, 2, 4>::try_from(vec![1, 2]).unwrap();
     /// assert_eq!(*values.last(), 2);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -274,10 +314,13 @@ where
     /// optional result instead.
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let mut values = Confined::<Vec<u8>, 2, 4>::try_from(vec![1, 2]).unwrap();
     /// *values.first_mut() = 3;
     /// assert_eq!(values.as_slice(), &[3, 2]);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -299,10 +342,13 @@ where
     /// optional result instead.
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let mut values = Confined::<Vec<u8>, 2, 4>::try_from(vec![1, 2]).unwrap();
     /// *values.last_mut() = 3;
     /// assert_eq!(values.as_slice(), &[1, 3]);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -323,9 +369,12 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
     /// build` and `cargo test`, but not by `cargo check`.
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let values = Confined::<Vec<u8>, 0, 10>::try_from(vec![1, 2]).unwrap();
     /// assert_eq!(values.len_u8(), 2);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -340,7 +389,7 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
                 "the upper bound of the confinement exceeds the integer limit"
             )
         };
-        self.len() as u8
+        self.len().try_into().expect("confinement broken")
     }
 
     /// Returns the number of elements in the confined collection as `u16`. The
@@ -354,9 +403,12 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
     /// ```
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let values = Confined::<Vec<u8>, 0, 10>::try_from(vec![1, 2]).unwrap();
     /// assert_eq!(values.len_u16(), 2);
+    /// # }
     /// ```
     pub fn len_u16(&self) -> u16 {
         const {
@@ -365,7 +417,7 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
                 "the upper bound of the confinement exceeds the integer limit"
             )
         };
-        self.len() as u16
+        self.len().try_into().expect("confinement broken")
     }
 
     /// Returns the number of elements in the confined collection as `u24`. The
@@ -379,10 +431,13 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
     /// ```
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// # use amplify_num::u24;
     /// let values = Confined::<Vec<u8>, 0, 10>::try_from(vec![1, 2]).unwrap();
     /// assert_eq!(values.len_u24(), u24::try_from(2u32).unwrap());
+    /// # }
     /// ```
     pub fn len_u24(&self) -> u24 {
         const {
@@ -391,7 +446,8 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
                 "the upper bound of the confinement exceeds the integer limit"
             )
         };
-        u24::try_from(self.len() as u32).expect("confinement broken")
+        let len = u32::try_from(self.len()).expect("confinement broken");
+        u24::try_from(len).expect("confinement broken")
     }
 
     /// Returns the number of elements in the confined collection as `u32`. The
@@ -405,9 +461,12 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
     /// ```
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use confined::Confined;
     /// let values = Confined::<Vec<u8>, 0, 10>::try_from(vec![1, 2]).unwrap();
     /// assert_eq!(values.len_u32(), 2);
+    /// # }
     /// ```
     pub fn len_u32(&self) -> u32 {
         const {
@@ -416,7 +475,7 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
                 "the upper bound of the confinement exceeds the integer limit"
             )
         };
-        self.len() as u32
+        self.len().try_into().expect("confinement broken")
     }
 }
 
@@ -431,10 +490,9 @@ impl<C: CollectionMap, const MAX_LEN: usize> Confined<C, ZERO, MAX_LEN> {
     }
 }
 
-impl<C: CollectionMap, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
 where
-    C: Default + ItemLen<Item = (C::Key, C::Value)>,
-    C::Access: Access<C, Item = <C as ItemLen>::Item>,
+    C: CollectionMap + Default + ItemLen,
 {
     /// Constructs a confinement with a collection made of a single required
     /// key-value pair.
@@ -444,10 +502,13 @@ where
     /// is reported by `cargo build` and `cargo test`, but not by `cargo check`.
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use std::collections::BTreeMap;
     /// # use confined::Confined;
     /// let map = Confined::<BTreeMap<u8, char>, 0, 1>::with_key_value(7, 'a');
     /// assert_eq!(map.len(), 1);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -458,10 +519,13 @@ where
     /// ```
     ///
     /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
     /// # use std::collections::BTreeMap;
     /// # use confined::Confined;
     /// let map = Confined::<BTreeMap<u8, char>, 1, 1>::with_key_value(7, 'a');
     /// assert_eq!(map.len(), 1);
+    /// # }
     /// ```
     ///
     /// ```compile_fail,E0080
@@ -471,14 +535,6 @@ where
     /// assert_eq!(map.len(), 1);
     /// ```
     pub fn with_key_value(key: C::Key, value: C::Value) -> Self {
-        const {
-            assert!(
-                MIN_LEN <= 1 && 1 <= MAX_LEN,
-                "the number of items is outside of the confinement bounds"
-            )
-        };
-        let mut c = C::default();
-        CollectionMap::insert(&mut c, key, value);
-        Self(c)
+        Self::with((key, value))
     }
 }

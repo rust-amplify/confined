@@ -23,6 +23,8 @@
 //! always holds between `MIN_LEN` and `MAX_LEN` items, whichever way it was
 //! obtained or changed.
 
+#![cfg(feature = "alloc")]
+
 use std::cell::Cell;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
@@ -561,10 +563,11 @@ mod serde_support {
     use serde::de::{self, Deserialize, Deserializer, IntoDeserializer, Visitor};
     use serde::ser::{self, Impossible, Serialize, SerializeSeq, Serializer};
 
-    /// The part of the serde data model which is used by a confined `Vec<u8>`.
+    /// The part of the serde data model used by confined bytes and strings.
     #[derive(Clone, PartialEq, Debug)]
     enum Token {
         U8(u8),
+        String(String),
         Seq(Vec<Token>),
         Newtype(&'static str, Box<Token>),
     }
@@ -638,6 +641,10 @@ mod serde_support {
             Ok(Token::U8(v))
         }
 
+        fn serialize_str(self, v: &str) -> Result<Token, TokenError> {
+            Ok(Token::String(v.to_owned()))
+        }
+
         fn serialize_seq(self, len: Option<usize>) -> Result<SeqSerializer, TokenError> {
             Ok(SeqSerializer(Vec::with_capacity(len.unwrap_or_default())))
         }
@@ -681,7 +688,6 @@ mod serde_support {
             serialize_f32(f32) -> Token;
             serialize_f64(f64) -> Token;
             serialize_char(char) -> Token;
-            serialize_str(&str) -> Token;
             serialize_bytes(&[u8]) -> Token;
             serialize_none() -> Token;
             serialize_unit() -> Token;
@@ -712,6 +718,7 @@ mod serde_support {
         fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, TokenError> {
             match self {
                 Token::U8(v) => visitor.visit_u8(v),
+                Token::String(v) => visitor.visit_string(v),
                 Token::Seq(items) => visitor.visit_seq(SeqDeserializer::new(items.into_iter())),
                 Token::Newtype(_, inner) => visitor.visit_newtype_struct(*inner),
             }
@@ -771,5 +778,49 @@ mod serde_support {
         let tokens = value.serialize(TokenSerializer).unwrap();
         assert_eq!(tokens, serialized(&[1, 2]));
         assert_eq!(UpToTwo::deserialize(tokens).unwrap(), value);
+    }
+
+    fn serialized_string(value: &str) -> Token {
+        Token::Newtype("Confined", Box::new(Token::String(value.to_owned())))
+    }
+
+    #[test]
+    fn string_serialization_checks_bytes_without_ascii() {
+        type Short = Confined<String, 1, 3>;
+
+        let value: Short = "€".parse().unwrap();
+        let tokens = value.serialize(TokenSerializer).unwrap();
+        assert_eq!(tokens, serialized_string("€"));
+        assert_eq!(Short::deserialize(tokens).unwrap(), value);
+        assert_eq!(
+            Short::deserialize(serialized_string("a€")).unwrap_err().0,
+            Error::Oversize { len: 4, max_len: 3 }.to_string()
+        );
+        assert_eq!(
+            Short::deserialize(serialized_string("")).unwrap_err().0,
+            Error::Undersize { len: 0, min_len: 1 }.to_string()
+        );
+    }
+
+    #[cfg(feature = "ascii-serde")]
+    #[test]
+    fn ascii_serialization_round_trip_and_bounds() {
+        use confined::ascii::AsciiString;
+
+        type Short = Confined<AsciiString, 1, 3>;
+
+        let value: Short = "abc".parse().unwrap();
+        let tokens = value.serialize(TokenSerializer).unwrap();
+        assert_eq!(tokens, serialized_string("abc"));
+        assert_eq!(Short::deserialize(tokens).unwrap(), value);
+        assert_eq!(
+            Short::deserialize(serialized_string("abcd")).unwrap_err().0,
+            Error::Oversize { len: 4, max_len: 3 }.to_string()
+        );
+        assert_eq!(
+            Short::deserialize(serialized_string("")).unwrap_err().0,
+            Error::Undersize { len: 0, min_len: 1 }.to_string()
+        );
+        assert!(Short::deserialize(serialized_string("€")).is_err());
     }
 }

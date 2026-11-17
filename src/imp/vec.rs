@@ -22,11 +22,14 @@
 use alloc::alloc::Allocator;
 use alloc::vec::Vec;
 
-use crate::{Confined, Error, ItemLen, ViaCollectionAlloc, ZERO};
+use collections::CollectionCapacity;
+
+use crate::{Confined, Error, ItemLen, ZERO};
 
 impl<T, A: Allocator> ItemLen for Vec<T, A> {
-    type Item = T;
-    type Access = ViaCollectionAlloc;
+    fn try_push(&mut self, item: T) -> Result<(), T> {
+        CollectionCapacity::try_push(self, item)
+    }
 }
 
 impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MAX_LEN> {
@@ -80,21 +83,14 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MA
     where
         T: Clone,
     {
-        Self::try_from(slice.to_vec())
+        Self::check_len(slice.len())?;
+        let mut items = Vec::new();
+        items
+            .try_reserve_exact(slice.len())
+            .map_err(|_| Error::CapacityExceeded { len: 0 })?;
+        items.extend_from_slice(slice);
+        Ok(Self(items))
     }
-
-    /* We had to delete it due to the naming conflict.
-       Use `Index::get_mut(vec)` instead.
-
-    /// Gets the mutable element of a vector
-    #[inline]
-    pub fn get_mut<I>(&mut self, index: I) -> Option<&mut I::Output>
-    where
-        I: SliceIndex<[T]>,
-    {
-        self.0.get_mut(index)
-    }
-     */
 }
 
 impl<T, A: Allocator, const MAX_LEN: usize> Confined<Vec<T, A>, ZERO, MAX_LEN> {

@@ -19,21 +19,28 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-use alloc::borrow::ToOwned;
 use alloc::string::String;
 use core::str::FromStr;
 
-use crate::{Confined, Error, ItemLen, ViaCollection, ZERO};
+use collections::{CollectionBytes, CollectionCapacity};
+
+use crate::{Confined, Error, ItemLen, ZERO};
 
 /// The length of a string is measured in bytes, and a `char` takes from one to
 /// four bytes in the UTF-8 encoding.
 impl ItemLen for String {
-    type Item = char;
-    type Access = ViaCollection;
     const MAX_ITEM_LEN: usize = char::MAX_LEN_UTF8;
 
     fn item_len(item: &char) -> usize {
-        item.len_utf8()
+        <String as CollectionBytes>::item_byte_len(item)
+    }
+
+    fn confined_len(&self) -> usize {
+        <String as CollectionBytes>::byte_len(self)
+    }
+
+    fn try_push(&mut self, item: char) -> Result<(), char> {
+        CollectionCapacity::try_push(self, item)
     }
 }
 
@@ -43,7 +50,13 @@ impl<const MIN_LEN: usize, const MAX_LEN: usize> TryFrom<&str>
     type Error = Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::try_from(value.to_owned())
+        Self::check_len(value.len())?;
+        let mut string = String::new();
+        string
+            .try_reserve_exact(value.len())
+            .map_err(|_| Error::CapacityExceeded { len: 0 })?;
+        string.push_str(value);
+        Ok(Self(string))
     }
 }
 

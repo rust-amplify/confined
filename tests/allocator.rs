@@ -19,6 +19,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#![cfg(feature = "alloc")]
+
 extern crate alloc;
 
 use alloc::alloc::{AllocError, Allocator, Global};
@@ -445,4 +447,165 @@ fn write_supports_a_non_default_allocator_and_balances_allocations() {
     assert_write_bounds(allocator.clone());
     assert!(allocator.allocations.get() > 0);
     allocator.assert_balanced();
+}
+
+#[derive(Clone, Debug, Default)]
+struct RefusingAllocator {
+    attempts: Rc<Cell<usize>>,
+}
+
+// SAFETY: This allocator never returns an allocation, so it never supplies a
+// pointer which could require deallocation.
+unsafe impl Allocator for RefusingAllocator {
+    fn allocate(&self, _: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        self.attempts.set(self.attempts.get() + 1);
+        Err(AllocError)
+    }
+
+    unsafe fn deallocate(&self, _: NonNull<u8>, _: Layout) {
+        unreachable!("refusing allocator never allocated memory");
+    }
+}
+
+#[test]
+fn allocation_failure_is_a_capacity_error_for_push_and_extend() {
+    let allocator = RefusingAllocator::default();
+    let mut vec = Confined::<Vec<u8, RefusingAllocator>, 0, 4>::new_in(allocator.clone());
+    assert_eq!(allocator.attempts.get(), 0);
+    assert!(matches!(vec.push(1), Err(Error::CapacityExceeded { .. })));
+    assert!(allocator.attempts.get() > 0);
+    assert!(vec.is_empty());
+    let attempts = allocator.attempts.get();
+    assert!(matches!(
+        vec.extend([1, 2]),
+        Err(Error::CapacityExceeded { .. })
+    ));
+    assert!(allocator.attempts.get() > attempts);
+    assert!(vec.is_empty());
+    assert_eq!(vec.extend([]), Ok(()));
+}
+
+#[test]
+fn fallible_constructors_report_refused_allocations() {
+    let allocator = RefusingAllocator::default();
+    type Bounded = Confined<Vec<u8, RefusingAllocator>, 0, 4>;
+
+    assert!(matches!(
+        Bounded::try_from_iter_in([1, 2], allocator.clone()),
+        Err(Error::CapacityExceeded { .. })
+    ));
+    assert!(allocator.attempts.get() > 0);
+    let attempts = allocator.attempts.get();
+    assert!(matches!(
+        Bounded::try_with_capacity_in(1, allocator.clone()),
+        Err(Error::CapacityExceeded { .. })
+    ));
+    assert!(allocator.attempts.get() > attempts);
+    let attempts = allocator.attempts.get();
+    assert!(
+        Bounded::try_with_capacity_in(0, allocator.clone())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        Bounded::try_from_iter_in([], allocator.clone())
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(allocator.attempts.get(), attempts);
+}
+
+#[test]
+fn huge_minimum_with_an_empty_iterator_makes_no_allocation_attempt() {
+    let allocator = RefusingAllocator::default();
+    assert!(matches!(
+        Confined::<Vec<u8, RefusingAllocator>, { usize::MAX }, { usize::MAX }>::try_from_iter_in(
+            [],
+            allocator.clone(),
+        ),
+        Err(Error::Undersize {
+            len: 0,
+            min_len: usize::MAX
+        })
+    ));
+    assert_eq!(allocator.attempts.get(), 0);
+}
+
+#[test]
+fn fallible_capacity_constructors_cap_the_request_to_maximum() {
+    let vec = Confined::<Vec<u8>, 0, 4>::try_with_capacity(usize::MAX).unwrap();
+    assert!(vec.is_empty());
+    assert!(vec.as_unconfined().capacity() >= 4);
+    assert!(vec.as_unconfined().capacity() <= 16);
+
+    let allocator = CountingAllocator::new();
+    let vec = Confined::<Vec<u8, CountingAllocator>, 0, 4>::try_with_capacity_in(
+        usize::MAX,
+        allocator.clone(),
+    )
+    .unwrap();
+    assert!(vec.is_empty());
+    assert!(vec.as_unconfined().capacity() >= 4);
+    assert!(vec.as_unconfined().capacity() <= 16);
+    assert_allocator_identity(vec.as_unconfined(), &allocator);
+    drop(vec);
+    allocator.assert_balanced();
+
+    let allocator = RefusingAllocator::default();
+    let vec = Confined::<Vec<u8, RefusingAllocator>, 0, 0>::try_with_capacity_in(
+        usize::MAX,
+        allocator.clone(),
+    )
+    .unwrap();
+    assert!(vec.is_empty());
+    assert_eq!(vec.as_unconfined().capacity(), 0);
+    assert_eq!(allocator.attempts.get(), 0);
+}
+
+#[test]
+fn fallible_reservation_checks_confinement_before_the_allocator() {
+    let allocator = RefusingAllocator::default();
+    let mut vec = Confined::<Vec<u8, RefusingAllocator>, 0, 4>::new_in(allocator.clone());
+    assert_eq!(vec.try_reserve(0), Ok(()));
+    assert!(matches!(vec.try_reserve(5), Err(Error::Oversize { .. })));
+    assert!(matches!(
+        vec.try_reserve(usize::MAX),
+        Err(Error::Oversize { .. })
+    ));
+    assert_eq!(allocator.attempts.get(), 0);
+    assert!(matches!(
+        vec.try_reserve(1),
+        Err(Error::CapacityExceeded { .. })
+    ));
+    assert!(allocator.attempts.get() > 0);
+    assert!(vec.is_empty());
+
+    let mut vec = Confined::<Vec<u8>, 0, 4>::try_from_iter([1]).unwrap();
+    assert_eq!(vec.try_reserve(3), Ok(()));
+    assert!(matches!(vec.try_reserve(4), Err(Error::Oversize { .. })));
+    assert!(matches!(
+        vec.try_reserve(usize::MAX),
+        Err(Error::Oversize { .. })
+    ));
+    assert_eq!(vec.as_slice(), &[1]);
+}
+
+#[cfg(feature = "std")]
+#[test]
+fn io_write_reports_refused_allocations_without_aborting() {
+    use std::io::Write;
+
+    let allocator = RefusingAllocator::default();
+    let mut bytes = Confined::<Vec<u8, RefusingAllocator>, 0, 4>::new_in(allocator.clone());
+    assert_eq!(bytes.write(&[]).unwrap(), 0);
+    assert_eq!(allocator.attempts.get(), 0);
+    assert!(bytes.write(&[1]).is_err());
+    assert!(allocator.attempts.get() > 0);
+    assert!(bytes.is_empty());
+    assert!(bytes.write_all(&[1, 2]).is_err());
+    assert!(bytes.is_empty());
+    let attempts = allocator.attempts.get();
+    assert!(bytes.write_all(&[1, 2, 3, 4, 5]).is_err());
+    assert_eq!(allocator.attempts.get(), attempts);
+    assert!(bytes.is_empty());
 }

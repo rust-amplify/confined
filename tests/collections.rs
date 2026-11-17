@@ -19,13 +19,15 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#![cfg(feature = "alloc")]
+
 use std::assert_matches;
 use std::collections::{BTreeMap, BinaryHeap, LinkedList, btree_map};
 #[cfg(any(feature = "std", feature = "indexmap"))]
 use std::hash::{BuildHasherDefault, DefaultHasher};
 
-use collections::{Collection, CollectionMap};
-use confined::{Confined, Error, ItemLen, ViaCollection};
+use collections::{Collection, CollectionBase, CollectionEntry, CollectionMap};
+use confined::{Confined, Error, ItemLen};
 
 #[test]
 fn linked_list_preserves_bounds_and_order() {
@@ -222,13 +224,10 @@ impl Extend<(u8, u8)> for OwnMap {
     }
 }
 
-impl Collection for OwnMap {
+impl CollectionBase for OwnMap {
     type Item = (u8, u8);
 
-    fn with_capacity(_capacity: usize) -> Self {
-        Self::default()
-    }
-    fn len(&self) -> usize {
+    fn item_count(&self) -> usize {
         self.0.len()
     }
     fn push(&mut self, (key, value): Self::Item) {
@@ -239,10 +238,15 @@ impl Collection for OwnMap {
     }
 }
 
+impl Collection for OwnMap {
+    fn with_capacity(_capacity: usize) -> Self {
+        Self::default()
+    }
+}
+
 impl CollectionMap for OwnMap {
     type Key = u8;
     type Value = u8;
-    type Entry<'a> = btree_map::Entry<'a, u8, u8>;
 
     fn contains_key(&self, key: &u8) -> bool {
         self.0.contains_key(key)
@@ -268,18 +272,20 @@ impl CollectionMap for OwnMap {
     fn remove(&mut self, key: &u8) -> Option<u8> {
         self.0.remove(key)
     }
-    fn entry(&mut self, key: u8) -> Self::Entry<'_> {
-        self.0.entry(key)
-    }
     fn retain(&mut self, f: impl FnMut(&u8, &mut u8) -> bool) {
         self.0.retain(f);
     }
 }
 
-impl ItemLen for OwnMap {
-    type Item = (u8, u8);
-    type Access = ViaCollection;
+impl CollectionEntry for OwnMap {
+    type Entry<'a> = btree_map::Entry<'a, u8, u8>;
+
+    fn entry(&mut self, key: u8) -> Self::Entry<'_> {
+        self.0.entry(key)
+    }
 }
+
+impl ItemLen for OwnMap {}
 
 #[test]
 fn entries_work_for_user_defined_maps() {
@@ -318,6 +324,47 @@ fn item_len_is_sufficient_for_generic_operations() {
     fill(&mut Confined::<LinkedList<u8>, 0, 2>::new(), [1, 2]);
     fill(&mut Confined::<BinaryHeap<u8>, 0, 2>::new(), [1, 2]);
     fill(&mut Confined::<OwnMap, 0, 2>::new(), [(1, 1), (2, 2)]);
+}
+
+#[derive(Default, Debug)]
+struct BaseOnly(Vec<u8>);
+
+impl CollectionBase for BaseOnly {
+    type Item = u8;
+
+    fn item_count(&self) -> usize {
+        self.0.len()
+    }
+    fn push(&mut self, item: Self::Item) {
+        self.0.push(item);
+    }
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+impl ItemLen for BaseOnly {}
+
+#[test]
+fn try_from_iter_needs_only_item_len_and_default() {
+    fn construct<C: ItemLen + Default>(
+        items: impl IntoIterator<Item = C::Item>,
+    ) -> Result<Confined<C, 1, 2>, Error> {
+        Confined::try_from_iter(items)
+    }
+
+    let mut col = construct::<BaseOnly>([1, 2]).unwrap();
+    assert_eq!(col.len(), 2);
+    assert_eq!(col.push(3), Err(Error::Oversize { len: 2, max_len: 2 }));
+    assert_eq!(col.release().0, [1, 2]);
+    assert!(matches!(
+        construct::<BaseOnly>([]),
+        Err(Error::Undersize { len: 0, min_len: 1 })
+    ));
+    assert!(matches!(
+        construct::<BaseOnly>([1, 2, 3]),
+        Err(Error::Oversize { len: 3, max_len: 2 })
+    ));
 }
 
 #[test]

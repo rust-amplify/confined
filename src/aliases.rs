@@ -28,6 +28,8 @@ use std::collections::{HashMap, HashSet};
 
 #[cfg(feature = "ascii")]
 use ascii::AsciiString;
+#[cfg(feature = "hashbrown")]
+use collections::hashbrown::{HashMap as HbMap, HashSet as HbSet};
 
 use crate::{Confined, ONE, U8MAX, U16MAX, U24MAX, U32MAX, U64MAX, ZERO};
 
@@ -189,6 +191,43 @@ pub type ConfinedHashMap<K, V, const MIN: usize = 0, const MAX: usize = U64MAX> 
 /// [`HashMap`] which contains at least a single item.
 #[cfg(feature = "std")]
 pub type NonEmptyHashMap<K, V, const MAX: usize = U64MAX> = Confined<HashMap<K, V>, ONE, MAX>;
+
+/// [`crate::hashbrown::HashSet`] with maximum 255 items of type `T`.
+#[cfg(feature = "hashbrown")]
+pub type TinyHashbrownSet<T, S = collections::hashbrown::DefaultHashBuilder, A = Global> =
+    Confined<HbSet<T, S, A>, ZERO, U8MAX>;
+/// [`crate::hashbrown::HashSet`] with maximum 2^16-1 items of type `T`.
+#[cfg(feature = "hashbrown")]
+pub type SmallHashbrownSet<T, S = collections::hashbrown::DefaultHashBuilder, A = Global> =
+    Confined<HbSet<T, S, A>, ZERO, U16MAX>;
+/// Confined [`crate::hashbrown::HashSet`].
+#[cfg(feature = "hashbrown")]
+pub type ConfinedHashbrownSet<
+    T,
+    const MIN: usize = 0,
+    const MAX: usize = U64MAX,
+    S = collections::hashbrown::DefaultHashBuilder,
+    A = Global,
+> = Confined<HbSet<T, S, A>, MIN, MAX>;
+
+/// [`crate::hashbrown::HashMap`] with maximum 255 items.
+#[cfg(feature = "hashbrown")]
+pub type TinyHashbrownMap<K, V, S = collections::hashbrown::DefaultHashBuilder, A = Global> =
+    Confined<HbMap<K, V, S, A>, ZERO, U8MAX>;
+/// [`crate::hashbrown::HashMap`] with maximum 2^16-1 items.
+#[cfg(feature = "hashbrown")]
+pub type SmallHashbrownMap<K, V, S = collections::hashbrown::DefaultHashBuilder, A = Global> =
+    Confined<HbMap<K, V, S, A>, ZERO, U16MAX>;
+/// Confined [`crate::hashbrown::HashMap`].
+#[cfg(feature = "hashbrown")]
+pub type ConfinedHashbrownMap<
+    K,
+    V,
+    const MIN: usize = 0,
+    const MAX: usize = U64MAX,
+    S = collections::hashbrown::DefaultHashBuilder,
+    A = Global,
+> = Confined<HbMap<K, V, S, A>, MIN, MAX>;
 
 /// [`BTreeMap`] with maximum 255 items.
 pub type TinyOrdMap<K, V> = Confined<BTreeMap<K, V>, ZERO, U8MAX>;

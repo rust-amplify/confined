@@ -44,6 +44,12 @@ pub enum Error {
         max_len: usize,
     },
 
+    /// The wrapped collection has no storage capacity for another item.
+    CapacityExceeded {
+        /** Current collection length */
+        len: usize,
+    },
+
     /// Attempt to address an index outside the collection bounds.
     OutOfBoundary {
         /** Index which was outside the bounds */
@@ -65,6 +71,10 @@ impl Display for Error {
                 f,
                 "operation results in collection size {len} exceeding {max_len}, which is \
                  prohibited"
+            ),
+            Error::CapacityExceeded { len } => write!(
+                f,
+                "collection capacity cannot hold an item after length {len}"
             ),
             Error::OutOfBoundary { index, len } => write!(
                 f,

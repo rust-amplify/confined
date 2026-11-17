@@ -27,7 +27,7 @@ macro_rules! tiny_s {
         $crate::TinyString::new()
     };
     ($lit:literal) => {
-        $crate::TinyString::try_from($crate::alloc::string::String::from($lit))
+        <$crate::TinyString as ::core::convert::TryFrom<&str>>::try_from($lit)
             .expect("static string for tiny_s literal is too long")
     };
 }
@@ -40,7 +40,7 @@ macro_rules! small_s {
         $crate::SmallString::new()
     };
     ($lit:literal) => {
-        $crate::SmallString::try_from($crate::alloc::string::String::from($lit))
+        <$crate::SmallString as ::core::convert::TryFrom<&str>>::try_from($lit)
             .expect("static string for small_s literal is too long")
     };
 }
@@ -53,7 +53,7 @@ macro_rules! medium_s {
         $crate::MediumString::new()
     };
     ($lit:literal) => {
-        $crate::MediumString::try_from($crate::alloc::string::String::from($lit))
+        <$crate::MediumString as ::core::convert::TryFrom<&str>>::try_from($lit)
             .expect("static string for medium_s literal is too long")
     };
 }
@@ -66,11 +66,11 @@ macro_rules! tiny_blob {
         $crate::TinyBlob::new()
     };
     ($elem:expr; $n:expr) => (
-        $crate::TinyBlob::try_from($crate::alloc::vec![$elem; $n])
+        $crate::TinyBlob::try_from_iter(::core::iter::repeat_n($elem, $n))
             .expect("inline tiny_blob contains invalid number of items")
     );
     ($($x:expr),+ $(,)?) => (
-        $crate::TinyBlob::try_from($crate::alloc::vec![$($x,)+])
+        $crate::TinyBlob::try_from_iter([$($x,)+])
             .expect("inline tiny_blob contains invalid number of items")
     )
 }
@@ -83,11 +83,11 @@ macro_rules! small_blob {
         $crate::SmallBlob::new()
     };
     ($elem:expr; $n:expr) => (
-        $crate::SmallBlob::try_from($crate::alloc::vec![$elem; $n])
+        $crate::SmallBlob::try_from_iter(::core::iter::repeat_n($elem, $n))
             .expect("inline small_blob contains invalid number of items")
     );
     ($($x:expr),+ $(,)?) => (
-        $crate::SmallBlob::try_from($crate::alloc::vec![$($x,)+])
+        $crate::SmallBlob::try_from_iter([$($x,)+])
             .expect("inline small_blob contains invalid number of items")
     )
 }
@@ -100,11 +100,11 @@ macro_rules! medium_blob {
         $crate::MediumBlob::new()
     };
     ($elem:expr; $n:expr) => (
-        $crate::MediumBlob::try_from($crate::alloc::vec![$elem; $n])
+        $crate::MediumBlob::try_from_iter(::core::iter::repeat_n($elem, $n))
             .expect("inline medium_blob contains invalid number of items")
     );
     ($($x:expr),+ $(,)?) => (
-        $crate::MediumBlob::try_from($crate::alloc::vec![$($x,)+])
+        $crate::MediumBlob::try_from_iter([$($x,)+])
             .expect("inline medium_blob contains invalid number of items")
     )
 }
@@ -117,11 +117,11 @@ macro_rules! tiny_vec {
         $crate::TinyVec::new()
     };
     ($elem:expr; $n:expr) => (
-        $crate::TinyVec::try_from($crate::alloc::vec![$elem; $n])
+        $crate::TinyVec::try_from_iter(::core::iter::repeat_n($elem, $n))
             .expect("inline tiny_vec literal contains invalid number of items")
     );
     ($($x:expr),+ $(,)?) => (
-        $crate::TinyVec::try_from($crate::alloc::vec![$($x,)+])
+        $crate::TinyVec::try_from_iter([$($x,)+])
             .expect("inline tiny_vec literal contains invalid number of items")
     )
 }
@@ -134,11 +134,11 @@ macro_rules! small_vec {
         $crate::SmallVec::new()
     };
     ($elem:expr; $n:expr) => (
-        $crate::SmallVec::try_from($crate::alloc::vec![$elem; $n])
+        $crate::SmallVec::try_from_iter(::core::iter::repeat_n($elem, $n))
             .expect("inline small_vec literal contains invalid number of items")
     );
     ($($x:expr),+ $(,)?) => (
-        $crate::SmallVec::try_from($crate::alloc::vec![$($x,)+])
+        $crate::SmallVec::try_from_iter([$($x,)+])
             .expect("inline small_vec literal contains invalid number of items")
     )
 }
@@ -151,11 +151,11 @@ macro_rules! medium_vec {
         $crate::MediumVec::new()
     };
     ($elem:expr; $n:expr) => (
-        $crate::MediumVec::try_from($crate::alloc::vec![$elem; $n])
+        $crate::MediumVec::try_from_iter(::core::iter::repeat_n($elem, $n))
             .expect("inline medium_vec literal contains invalid number of items")
     );
     ($($x:expr),+ $(,)?) => (
-        $crate::MediumVec::try_from($crate::alloc::vec![$($x,)+])
+        $crate::MediumVec::try_from_iter([$($x,)+])
             .expect("inline medium_vec literal contains invalid number of items")
     )
 }
@@ -167,7 +167,7 @@ macro_rules! tiny_deque {
         $crate::TinyDeque::new()
     };
     ($elem:expr; $n:expr) => {
-        $crate::TinyDeque::try_from_iter($crate::alloc::vec![$elem; $n])
+        $crate::TinyDeque::try_from_iter(::core::iter::repeat_n($elem, $n))
             .expect("inline tiny_deque contains invalid number of items")
     };
     ($($item:expr),+ $(,)?) => {
@@ -183,7 +183,7 @@ macro_rules! small_deque {
         $crate::SmallDeque::new()
     };
     ($elem:expr; $n:expr) => {
-        $crate::SmallDeque::try_from_iter($crate::alloc::vec![$elem; $n])
+        $crate::SmallDeque::try_from_iter(::core::iter::repeat_n($elem, $n))
             .expect("inline small_deque contains invalid number of items")
     };
     ($($item:expr),+ $(,)?) => {
@@ -199,7 +199,7 @@ macro_rules! medium_deque {
         $crate::MediumDeque::new()
     };
     ($elem:expr; $n:expr) => {
-        $crate::MediumDeque::try_from_iter($crate::alloc::vec![$elem; $n])
+        $crate::MediumDeque::try_from_iter(::core::iter::repeat_n($elem, $n))
             .expect("inline medium_deque contains invalid number of items")
     };
     ($($item:expr),+ $(,)?) => {

@@ -34,12 +34,9 @@ mod io {
             if buf.is_empty() {
                 return Ok(0);
             }
-            let len = self.len();
-            let buf_len = buf.len();
-            if buf_len > MAX_LEN || len >= MAX_LEN || len.saturating_add(buf_len) > MAX_LEN {
-                return Err(io::Error::from(io::ErrorKind::OutOfMemory));
-            }
-            self.0.extend(buf);
+            self.try_reserve(buf.len())
+                .map_err(|_| io::Error::from(io::ErrorKind::OutOfMemory))?;
+            self.0.extend_from_slice(buf);
             Ok(buf.len())
         }
 
@@ -56,15 +53,17 @@ mod hex {
     use alloc::vec::Vec;
     use core::fmt::{self, Formatter, LowerHex, UpperHex};
 
-    use amplify_num::hex::{self, FromHex, ToHex};
+    use amplify_num::hex::{self, FromHex, HexIterator};
 
     use crate::Confined;
 
+    /// Hex without temporary allocations. Alternate formatting abbreviates
+    /// blobs longer than 16 bytes to their first and last eight bytes.
     impl<A: Allocator, const MIN_LEN: usize, const MAX_LEN: usize> LowerHex
         for Confined<Vec<u8, A>, MIN_LEN, MAX_LEN>
     {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-            f.write_str(&self.0.to_hex())
+            format_hex(&self.0, f, b"0123456789abcdef")
         }
     }
 
@@ -72,13 +71,37 @@ mod hex {
         for Confined<Vec<u8, A>, MIN_LEN, MAX_LEN>
     {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-            f.write_str(&self.0.to_hex().to_uppercase())
+            format_hex(&self.0, f, b"0123456789ABCDEF")
+        }
+    }
+
+    fn format_hex(bytes: &[u8], f: &mut Formatter<'_>, digits: &[u8; 16]) -> fmt::Result {
+        fn write(bytes: &[u8], f: &mut Formatter<'_>, digits: &[u8; 16]) -> fmt::Result {
+            for byte in bytes {
+                let pair = [
+                    digits[usize::from(byte >> 4)],
+                    digits[usize::from(byte & 15)],
+                ];
+                f.write_str(core::str::from_utf8(&pair).expect("ASCII hex digits"))?;
+            }
+            Ok(())
+        }
+
+        if f.alternate() && bytes.len() > 16 {
+            write(&bytes[..8], f, digits)?;
+            f.write_str("..")?;
+            write(&bytes[bytes.len() - 8..], f, digits)
+        } else {
+            write(bytes, f, digits)
         }
     }
 
     /// The number of bytes must fit the confinement. Otherwise the result is
     /// [`hex::Error::InvalidLength`] with the violated bound and the number of
     /// bytes in the data.
+    ///
+    /// The upstream error type cannot represent allocation failure; allocation
+    /// follows `Vec::push` semantics. Iterator size hints are never trusted.
     impl<A: Allocator + Default, const MIN_LEN: usize, const MAX_LEN: usize> FromHex
         for Confined<Vec<u8, A>, MIN_LEN, MAX_LEN>
     {
@@ -86,16 +109,24 @@ mod hex {
         where
             I: Iterator<Item = Result<u8, hex::Error>> + ExactSizeIterator + DoubleEndedIterator,
         {
-            // The length is checked before decoding, so the data which do not
-            // fit are not allocated, and after it, since an iterator may
-            // report a wrong length.
-            check_len::<MIN_LEN, MAX_LEN>(iter.len())?;
-            let mut bytes = Vec::<u8, A>::with_capacity_in(iter.len(), A::default());
+            let mut bytes = Vec::<u8, A>::new_in(A::default());
             for byte in iter {
+                if bytes.len() == MAX_LEN {
+                    return Err(hex::Error::InvalidLength(
+                        MAX_LEN,
+                        MAX_LEN.saturating_add(1),
+                    ));
+                }
                 bytes.push(byte?);
             }
             check_len::<MIN_LEN, MAX_LEN>(bytes.len())?;
             Ok(Self(bytes))
+        }
+
+        fn from_hex(s: &str) -> Result<Self, hex::Error> {
+            let iter = HexIterator::new(s)?;
+            check_len::<MIN_LEN, MAX_LEN>(iter.len())?;
+            Self::from_byte_iter(iter)
         }
     }
 

@@ -21,11 +21,14 @@
 
 use alloc::collections::BinaryHeap;
 
-use crate::{Confined, ItemLen, ViaCollection, ZERO};
+use collections::CollectionCapacity;
+
+use crate::{Confined, ItemLen, ZERO};
 
 impl<T: Ord> ItemLen for BinaryHeap<T> {
-    type Item = T;
-    type Access = ViaCollection;
+    fn try_push(&mut self, item: T) -> Result<(), T> {
+        CollectionCapacity::try_push(self, item)
+    }
 }
 
 impl<T: Ord, const MAX_LEN: usize> Confined<BinaryHeap<T>, ZERO, MAX_LEN> {

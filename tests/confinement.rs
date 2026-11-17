@@ -19,6 +19,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#![cfg(feature = "alloc")]
+
 use std::assert_matches;
 use std::collections::BTreeMap;
 #[cfg(feature = "std")]
@@ -122,8 +124,18 @@ fn cant_go_above_max() {
     for i in 1..=255 {
         set.push(i).unwrap();
     }
+    assert_eq!(set.push(255), Ok(()));
+    assert_eq!(set.extend([1, 255]), Ok(()));
+    assert_eq!(set.len_u8(), u8::MAX);
     assert_matches!(
-        set.push(255),
+        set.push(0),
+        Err(Error::Oversize {
+            len: 255,
+            max_len: 255
+        })
+    );
+    assert_matches!(
+        set.extend([0]),
         Err(Error::Oversize {
             len: 255,
             max_len: 255

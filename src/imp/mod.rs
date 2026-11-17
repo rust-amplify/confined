@@ -19,19 +19,28 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#[cfg(feature = "alloc")]
 mod string;
+#[cfg(feature = "alloc")]
 mod vec;
+#[cfg(feature = "alloc")]
 mod bytes;
+#[cfg(feature = "alloc")]
 mod deque;
+#[cfg(feature = "alloc")]
 mod heap;
+#[cfg(feature = "alloc")]
 mod list;
+#[cfg(feature = "alloc")]
 mod btree;
 #[cfg(feature = "std")]
 mod hashed;
-#[cfg(feature = "ascii")]
+#[cfg(feature = "hashbrown")]
+mod hashbrown;
+#[cfg(all(feature = "ascii", feature = "alloc"))]
 mod ascii;
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "alloc"))]
 mod indexed;
 
-#[cfg(feature = "ascii")]
+#[cfg(all(feature = "ascii", feature = "alloc"))]
 pub use self::ascii::AsciiError;

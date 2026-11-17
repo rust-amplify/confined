@@ -21,6 +21,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(unsafe_code)]
 
 //! Confined collections with compile-time size guarantees.
 //!
@@ -30,6 +31,8 @@
 //! they are a part of the type:
 //!
 //! ```
+//! # #[cfg(feature = "alloc")]
+//! # {
 //! use confined::{Confined, Error};
 //!
 //! // From one to three items.
@@ -40,7 +43,8 @@
 //!     signers.push("dave"),
 //!     Err(Error::Oversize { len: 3, max_len: 3 })
 //! );
-//! # Ok::<(), Error>(())
+//! # }
+//! # Ok::<(), confined::Error>(())
 //! ```
 //!
 //! The limits are checked when a value is constructed and by each method which
@@ -48,33 +52,42 @@
 //! collection, so all read-only methods of the collection are available, while
 //! its size-changing methods are replaced with the checked ones.
 //!
-//! The crate also provides type aliases for the most common limits, like
-//! [`TinyVec`], [`SmallString`] or [`NonEmptyVec`], and macros constructing
-//! them, like [`tiny_vec!`] or [`small_bmap!`].
+//! With `alloc`, aliases such as `TinyVec`, `SmallString` and `NonEmptyVec`
+//! and constructor macros such as `tiny_vec!` and `small_bmap!` are available.
+//! Length-limit constants are capped at `usize::MAX` on narrower platforms.
 
+#[cfg(feature = "alloc")]
 pub extern crate alloc;
 
 #[cfg(feature = "ascii")]
 pub extern crate ascii;
 #[cfg(feature = "indexmap")]
 pub extern crate indexmap;
+#[cfg(feature = "hashbrown")]
+pub use collections::hashbrown;
+#[cfg(feature = "heapless")]
+pub use collections::heapless;
 
-mod access;
 mod error;
 mod base;
 mod specifics;
 mod imp;
+#[cfg(feature = "alloc")]
 mod aliases;
+#[cfg(feature = "heapless")]
+mod fixed;
+#[cfg(feature = "alloc")]
 mod macros;
 
-pub use access::{Access, ViaCollection, ViaCollectionAlloc};
+#[cfg(feature = "alloc")]
 pub use aliases::*;
 pub use base::{Confined, Entry, ItemLen};
 pub use error::Error;
+#[cfg(feature = "heapless")]
+pub use fixed::*;
 #[cfg(feature = "ascii")]
 pub use imp::AsciiError;
 
-// TODO: Re-name to U*MAX
 /// Constant for a minimal size of a confined collection.
 pub const ZERO: usize = 0;
 /// Constant for a minimal size of a confined collection.
@@ -85,30 +98,30 @@ pub const U8MAX: usize = u8::MAX as usize;
 pub const U16MAX: usize = u16::MAX as usize;
 /// Constant for a maximal size of a confined collection equal to
 /// [`u24::MAX`](amplify_num::u24::MAX).
-pub const U24MAX: usize = amplify_num::u24::MAX.into_usize();
+pub const U24MAX: usize = max_usize(24);
 /// Constant for a maximal size of a confined collection equal to [`u32::MAX`].
-pub const U32MAX: usize = u32::MAX as usize;
+pub const U32MAX: usize = max_usize(32);
 /// Constant for a maximal size of a confined collection equal to
 /// [`u40::MAX`](amplify_num::u40::MAX).
-pub const U40MAX: usize = amplify_num::u40::MAX.into_usize();
+pub const U40MAX: usize = max_usize(40);
 /// Constant for a maximal size of a confined collection equal to
 /// [`u48::MAX`](amplify_num::u48::MAX).
-pub const U48MAX: usize = amplify_num::u48::MAX.into_usize();
+pub const U48MAX: usize = max_usize(48);
 /// Constant for a maximal size of a confined collection equal to
 /// [`u56::MAX`](amplify_num::u56::MAX).
-pub const U56MAX: usize = amplify_num::u56::MAX.into_usize();
+pub const U56MAX: usize = max_usize(56);
 /// Constant for a maximal size of a confined collection equal to [`u64::MAX`].
-pub const U64MAX: usize = u64::MAX as usize;
+pub const U64MAX: usize = max_usize(64);
 
-/// Runs the examples from `README.md` as documentation tests. The examples
-/// need all features of the crate.
-#[cfg(all(
-    doctest,
-    feature = "std",
-    feature = "hex",
-    feature = "ascii",
-    feature = "indexmap",
-    feature = "serde"
-))]
+const fn max_usize(bits: u32) -> usize {
+    if usize::BITS <= bits {
+        usize::MAX
+    } else {
+        (1usize << bits) - 1
+    }
+}
+
+/// Runs the feature-aware examples from `README.md` as documentation tests.
+#[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
