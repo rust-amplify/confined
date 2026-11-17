@@ -49,7 +49,7 @@ where
         // The data are read in the same form as the derived `Serialize`
         // writes them: as a newtype struct named `Confined`.
         #[derive(Deserialize)]
-        #[serde(crate = "serde", rename = "Confined")]
+        #[serde(rename = "Confined")]
         struct Unchecked<C>(C);
 
         let Unchecked(col) = <Unchecked<C> as serde::Deserialize>::deserialize(deserializer)?;
