@@ -23,6 +23,8 @@ mod string;
 mod vec;
 mod bytes;
 mod deque;
+mod heap;
+mod list;
 mod btree;
 #[cfg(feature = "std")]
 mod hashed;

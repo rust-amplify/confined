@@ -19,7 +19,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 //! Confined collections with compile-time size guarantees.
@@ -53,17 +53,13 @@
 //! them, like [`tiny_vec!`] or [`small_bmap!`].
 
 pub extern crate alloc;
-extern crate core;
 
 #[cfg(feature = "ascii")]
 pub extern crate ascii;
 #[cfg(feature = "indexmap")]
 pub extern crate indexmap;
 
-#[cfg(feature = "serde")]
-#[macro_use]
-extern crate serde;
-
+mod access;
 mod error;
 mod base;
 mod specifics;
@@ -71,6 +67,7 @@ mod imp;
 mod aliases;
 mod macros;
 
+pub use access::{Access, ViaCollection, ViaCollectionAlloc};
 pub use aliases::*;
 pub use base::{Confined, Entry, ItemLen};
 pub use error::Error;
@@ -86,15 +83,19 @@ pub const ONE: usize = 1;
 pub const U8MAX: usize = u8::MAX as usize;
 /// Constant for a maximal size of a confined collection equal to [`u16::MAX`].
 pub const U16MAX: usize = u16::MAX as usize;
-/// Constant for a maximal size of a confined collection equal to [`u24::MAX`](amplify_num::u24::MAX).
+/// Constant for a maximal size of a confined collection equal to
+/// [`u24::MAX`](amplify_num::u24::MAX).
 pub const U24MAX: usize = amplify_num::u24::MAX.into_usize();
 /// Constant for a maximal size of a confined collection equal to [`u32::MAX`].
 pub const U32MAX: usize = u32::MAX as usize;
-/// Constant for a maximal size of a confined collection equal to [`u40::MAX`](amplify_num::u40::MAX).
+/// Constant for a maximal size of a confined collection equal to
+/// [`u40::MAX`](amplify_num::u40::MAX).
 pub const U40MAX: usize = amplify_num::u40::MAX.into_usize();
-/// Constant for a maximal size of a confined collection equal to [`u48::MAX`](amplify_num::u48::MAX).
+/// Constant for a maximal size of a confined collection equal to
+/// [`u48::MAX`](amplify_num::u48::MAX).
 pub const U48MAX: usize = amplify_num::u48::MAX.into_usize();
-/// Constant for a maximal size of a confined collection equal to [`u56::MAX`](amplify_num::u56::MAX).
+/// Constant for a maximal size of a confined collection equal to
+/// [`u56::MAX`](amplify_num::u56::MAX).
 pub const U56MAX: usize = amplify_num::u56::MAX.into_usize();
 /// Constant for a maximal size of a confined collection equal to [`u64::MAX`].
 pub const U64MAX: usize = u64::MAX as usize;

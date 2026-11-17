@@ -19,12 +19,15 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+use alloc::alloc::Allocator;
 use alloc::vec::Vec;
 
-use crate::base::FitsLen;
-use crate::{Confined, Error, ItemLen, ZERO};
+use crate::{Confined, Error, ItemLen, ViaCollectionAlloc, ZERO};
 
-impl<T> ItemLen for Vec<T> {}
+impl<T, A: Allocator> ItemLen for Vec<T, A> {
+    type Item = T;
+    type Access = ViaCollectionAlloc;
+}
 
 impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MAX_LEN> {
     /// Constructs confinement out of an array of items. Does allocation.
@@ -48,7 +51,12 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MA
     /// ```
     #[inline]
     pub fn from_array<const N: usize>(items: [T; N]) -> Self {
-        let () = FitsLen::<MIN_LEN, MAX_LEN, N>::VALID;
+        const {
+            assert!(
+                MIN_LEN <= N && N <= MAX_LEN,
+                "the number of items is outside of the confinement bounds"
+            )
+        };
         Self(Vec::from(items))
     }
 
@@ -75,18 +83,6 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MA
         Self::try_from(slice.to_vec())
     }
 
-    /// Returns slice representation of the vec.
-    #[inline]
-    pub fn as_slice(&self) -> &[T] {
-        &self.0
-    }
-
-    /// Converts into the inner unconfined vector.
-    #[inline]
-    pub fn into_vec(self) -> Vec<T> {
-        self.0
-    }
-
     /* We had to delete it due to the naming conflict.
        Use `Index::get_mut(vec)` instead.
 
@@ -101,7 +97,7 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MA
      */
 }
 
-impl<T, const MAX_LEN: usize> Confined<Vec<T>, ZERO, MAX_LEN> {
+impl<T, A: Allocator, const MAX_LEN: usize> Confined<Vec<T, A>, ZERO, MAX_LEN> {
     /// Removes the last element from a vector and returns it, or [`None`] if it
     /// is empty.
     #[inline]
@@ -110,7 +106,9 @@ impl<T, const MAX_LEN: usize> Confined<Vec<T>, ZERO, MAX_LEN> {
     }
 }
 
-impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MAX_LEN> {
+impl<T, A: Allocator, const MIN_LEN: usize, const MAX_LEN: usize>
+    Confined<Vec<T, A>, MIN_LEN, MAX_LEN>
+{
     /// Removes an element from the vector at a given index. Errors if the index
     /// exceeds the number of elements in the vector, of if the new vector
     /// length will be less than the confinement requirement. Returns the
@@ -126,5 +124,17 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MA
     /// The iterator yields all items from start to end.
     pub fn iter(&self) -> core::slice::Iter<'_, T> {
         self.0.iter()
+    }
+
+    /// Returns the slice representation of the vector.
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+
+    /// Converts into the inner unconfined vector.
+    #[inline]
+    pub fn into_vec(self) -> Vec<T, A> {
+        self.0
     }
 }

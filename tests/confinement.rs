@@ -19,6 +19,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+use std::assert_matches;
 use std::collections::BTreeMap;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
@@ -44,9 +45,9 @@ fn fits_max() {
     #[cfg(feature = "std")]
     let mut map = TinyHashMap::new();
     let mut bmap = TinyOrdMap::new();
-    #[cfg(feature = "indexmap")]
+    #[cfg(all(feature = "indexmap", feature = "std"))]
     let mut imap = TinyIndexMap::new();
-    #[cfg(feature = "indexmap")]
+    #[cfg(all(feature = "indexmap", feature = "std"))]
     let mut iset = TinyIndexSet::new();
     assert!(vec.is_empty());
     assert!(deque.is_empty());
@@ -56,9 +57,9 @@ fn fits_max() {
     #[cfg(feature = "std")]
     assert!(map.is_empty());
     assert!(bmap.is_empty());
-    #[cfg(feature = "indexmap")]
+    #[cfg(all(feature = "indexmap", feature = "std"))]
     assert!(imap.is_empty());
-    #[cfg(feature = "indexmap")]
+    #[cfg(all(feature = "indexmap", feature = "std"))]
     assert!(iset.is_empty());
     for index in 1..=255 {
         vec.push(5u8).unwrap();
@@ -69,9 +70,9 @@ fn fits_max() {
         #[cfg(feature = "std")]
         map.insert(5u8, 'a').unwrap();
         bmap.insert(index, 'a').unwrap();
-        #[cfg(feature = "indexmap")]
+        #[cfg(all(feature = "indexmap", feature = "std"))]
         imap.insert(index, 'a').unwrap();
-        #[cfg(feature = "indexmap")]
+        #[cfg(all(feature = "indexmap", feature = "std"))]
         iset.push(index).unwrap();
     }
     assert_eq!(vec.len_u8(), u8::MAX);
@@ -82,9 +83,9 @@ fn fits_max() {
     #[cfg(feature = "std")]
     assert_eq!(map.len_u8(), 1);
     assert_eq!(bmap.len_u8(), u8::MAX);
-    #[cfg(feature = "indexmap")]
+    #[cfg(all(feature = "indexmap", feature = "std"))]
     assert_eq!(imap.len_u8(), u8::MAX);
-    #[cfg(feature = "indexmap")]
+    #[cfg(all(feature = "indexmap", feature = "std"))]
     assert_eq!(iset.len_u8(), u8::MAX);
 
     vec.clear();
@@ -97,44 +98,44 @@ fn cant_go_above_max() {
     for _ in 1..=255 {
         s.push('a').unwrap();
     }
-    assert!(matches!(
+    assert_matches!(
         s.push('a'),
         Err(Error::Oversize {
             len: 255,
             max_len: 255
         })
-    ));
+    );
 
     let mut v = TinyVec::<u8>::new();
     for _ in 1..=255 {
         v.push(1).unwrap();
     }
-    assert!(matches!(
+    assert_matches!(
         v.push(1),
         Err(Error::Oversize {
             len: 255,
             max_len: 255
         })
-    ));
+    );
 
     let mut set = TinyOrdSet::<u8>::new();
     for i in 1..=255 {
         set.push(i).unwrap();
     }
-    assert!(matches!(
+    assert_matches!(
         set.push(255),
         Err(Error::Oversize {
             len: 255,
             max_len: 255
         })
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         set.push(0),
         Err(Error::Oversize {
             len: 255,
             max_len: 255
         })
-    ));
+    );
 
     let mut map = TinyOrdMap::<u8, u8>::new();
     for i in 1..=255 {
@@ -142,90 +143,57 @@ fn cant_go_above_max() {
     }
     // Replacing an existing key should succeed
     assert_eq!(map.insert(255, 0), Ok(Some(255)));
-    assert!(matches!(
+    assert_matches!(
         map.insert(0, 0),
         Err(Error::Oversize {
             len: 255,
             max_len: 255
         })
-    ));
+    );
 }
 
 #[test]
 fn boundary() {
     let mut s = TinyString::new();
     s.push('a').unwrap();
-    assert!(matches!(
-        s.remove(1),
-        Err(Error::OutOfBoundary { index: 1, len: 1 })
-    ));
+    assert_matches!(s.remove(1), Err(Error::OutOfBoundary { index: 1, len: 1 }));
 
     let mut v = TinyVec::<u8>::new();
     v.push(1).unwrap();
-    assert!(matches!(
-        v.remove(1),
-        Err(Error::OutOfBoundary { index: 1, len: 1 })
-    ));
+    assert_matches!(v.remove(1), Err(Error::OutOfBoundary { index: 1, len: 1 }));
 
     let mut d = TinyDeque::<u8>::new();
     d.push_back(1).unwrap();
-    assert!(matches!(
-        d.remove(1),
-        Err(Error::OutOfBoundary { index: 1, len: 1 })
-    ));
+    assert_matches!(d.remove(1), Err(Error::OutOfBoundary { index: 1, len: 1 }));
 }
 
 #[test]
 fn cant_go_below_min() {
     let mut s = TinyString::new();
-    assert!(matches!(
-        s.remove(0),
-        Err(Error::OutOfBoundary { index: 0, len: 0 })
-    ));
+    assert_matches!(s.remove(0), Err(Error::OutOfBoundary { index: 0, len: 0 }));
 
     let mut s = TinyVec::<u8>::new();
-    assert!(matches!(
-        s.remove(0),
-        Err(Error::OutOfBoundary { index: 0, len: 0 })
-    ));
+    assert_matches!(s.remove(0), Err(Error::OutOfBoundary { index: 0, len: 0 }));
 
     let mut s = TinyOrdSet::<u8>::new();
-    assert!(matches!(s.remove(&0), Ok(false)));
+    assert_matches!(s.remove(&0), Ok(false));
 
     let mut s = TinyOrdMap::<u8, u8>::new();
-    assert!(matches!(s.remove(&0), Ok(None)));
+    assert_matches!(s.remove(&0), Ok(None));
 
     let mut s = NonEmptyString::<U8MAX>::with('a');
-    assert!(matches!(
-        s.remove(0),
-        Err(Error::Undersize { len: 1, min_len: 1 })
-    ));
-    assert!(matches!(
-        s.remove(1),
-        Err(Error::OutOfBoundary { index: 1, len: 1 })
-    ));
+    assert_matches!(s.remove(0), Err(Error::Undersize { len: 1, min_len: 1 }));
+    assert_matches!(s.remove(1), Err(Error::OutOfBoundary { index: 1, len: 1 }));
 
     let mut v = NonEmptyVec::<u8>::with(1);
-    assert!(matches!(
-        v.remove(0),
-        Err(Error::Undersize { len: 1, min_len: 1 })
-    ));
-    assert!(matches!(
-        v.remove(1),
-        Err(Error::OutOfBoundary { index: 1, len: 1 })
-    ));
+    assert_matches!(v.remove(0), Err(Error::Undersize { len: 1, min_len: 1 }));
+    assert_matches!(v.remove(1), Err(Error::OutOfBoundary { index: 1, len: 1 }));
 
     let mut set = NonEmptyOrdSet::<u8>::with(1);
-    assert!(matches!(
-        set.remove(&1),
-        Err(Error::Undersize { len: 1, min_len: 1 })
-    ));
+    assert_matches!(set.remove(&1), Err(Error::Undersize { len: 1, min_len: 1 }));
 
     let mut map = NonEmptyOrdMap::<u8, u8>::with_key_value(1, 1);
-    assert!(matches!(
-        map.remove(&1),
-        Err(Error::Undersize { len: 1, min_len: 1 })
-    ));
+    assert_matches!(map.remove(&1), Err(Error::Undersize { len: 1, min_len: 1 }));
 }
 
 #[test]
@@ -278,7 +246,7 @@ fn macros() {
     small_bset!("a", "b", "c");
     small_bmap!("a" => 1, "b" => 2, "c" => 3);
 
-    #[cfg(feature = "indexmap")]
+    #[cfg(all(feature = "indexmap", feature = "std"))]
     {
         tiny_imap!() as TinyIndexMap<&str, u8>;
         tiny_imap!("a" => 1, "b" => 2, "c" => 3);
@@ -310,7 +278,7 @@ fn iter_mut_btree() {
 }
 
 #[test]
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 fn iter_mut_indexmap() {
     let mut coll = tiny_imap!(1 => "one");
     for (_index, item) in &mut coll {
@@ -542,7 +510,7 @@ mod standalone {
             assert_eq!(confined::medium_map!("a" => 1, "b" => 2).len(), 2);
         }
 
-        #[cfg(feature = "indexmap")]
+        #[cfg(all(feature = "indexmap", feature = "std"))]
         {
             assert_eq!(confined::tiny_iset!("a", "b", "a").len_u8(), 2);
             assert_eq!(confined::small_iset!("a", "b").len_u16(), 2);

@@ -21,23 +21,24 @@
 
 use core::borrow::{Borrow, BorrowMut};
 use core::fmt::{self, Display, Formatter};
-use core::marker::PhantomData;
 use core::ops::{Deref, Index, IndexMut};
 
-use collections::{Collection, KeyedCollection};
+use collections::{Collection, CollectionAlloc, CollectionMap, CollectionSet, MapEntry};
 
 use super::Error;
+use crate::access::{Access, ViaCollectionAlloc};
 
 /// The confinement for the collection.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct Confined<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize>(pub(crate) C);
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct Confined<C, const MIN_LEN: usize, const MAX_LEN: usize>(pub(crate) C);
 
 #[cfg(feature = "serde")]
 impl<'de, C, const MIN_LEN: usize, const MAX_LEN: usize> serde::Deserialize<'de>
     for Confined<C, MIN_LEN, MAX_LEN>
 where
-    C: Collection + serde::Deserialize<'de>,
+    C: ItemLen + serde::Deserialize<'de>,
+    C::Access: Access<C, Item = <C as ItemLen>::Item>,
 {
     /// Deserializes the collection and checks that it fits the confinement.
     /// The data which violate the confinement bounds are rejected with a
@@ -48,7 +49,7 @@ where
     {
         // The data are read in the same form as the derived `Serialize`
         // writes them: as a newtype struct named `Confined`.
-        #[derive(Deserialize)]
+        #[derive(serde::Deserialize)]
         #[serde(rename = "Confined")]
         struct Unchecked<C>(C);
 
@@ -60,7 +61,8 @@ where
 /// Tells how much a single item can add to the length of a collection.
 ///
 /// The length of a confined collection is the value returned by
-/// [`Collection::len`]. An item added to most of the collections increases it
+/// [`Collection::len`] or [`CollectionAlloc::len`], selected by its access
+/// strategy. An item added to most of the collections increases it
 /// by one at most, which is the default of this trait.
 /// [`String`](alloc::string::String) is the exception: its length is measured
 /// in bytes, and a `char` takes from one to four of them.
@@ -70,7 +72,8 @@ where
 /// never report less than an item really adds, otherwise these methods are not
 /// able to uphold the confinement.
 ///
-/// A collection where each item counts as one needs an empty implementation:
+/// A collection where each item counts as one specifies its item type and
+/// access strategy:
 ///
 /// ```
 /// # use confined::ItemLen;
@@ -100,13 +103,22 @@ where
 /// #         self.0.clear()
 /// #     }
 /// # }
-/// impl ItemLen for Stack {}
+/// impl ItemLen for Stack {
+///     type Item = u8;
+///     type Access = confined::ViaCollection;
+/// }
 ///
 /// let mut stack = confined::Confined::<Stack, 0, 1>::try_from(Stack(vec![])).unwrap();
 /// assert!(stack.push(1).is_ok());
 /// assert!(stack.push(2).is_err());
 /// ```
-pub trait ItemLen: Collection {
+pub trait ItemLen: Sized {
+    /// Item type contained within the collection.
+    type Item;
+
+    /// Access strategy used to operate on the collection.
+    type Access: Access<Self, Item = Self::Item>;
+
     /// The largest value which [`ItemLen::item_len`] can return.
     const MAX_ITEM_LEN: usize = 1;
 
@@ -125,11 +137,10 @@ pub trait ItemLen: Collection {
 /// confinement. Use the `remove` method of the confined map, which checks the
 /// bound.
 ///
-/// The methods are provided for the maps supported by the crate: `BTreeMap`,
-/// `HashMap` and `IndexMap`.
-pub struct Entry<'a, C: KeyedCollection + 'a>(pub(crate) C::Entry<'a>);
+/// The methods are provided for collections implementing [`CollectionMap`].
+pub struct Entry<'a, C: CollectionMap + 'a>(pub(crate) C::Entry<'a>);
 
-impl<'a, C: KeyedCollection + 'a> fmt::Debug for Entry<'a, C>
+impl<'a, C: CollectionMap + 'a> fmt::Debug for Entry<'a, C>
 where
     C::Entry<'a>: fmt::Debug,
 {
@@ -138,81 +149,7 @@ where
     }
 }
 
-/// Build-time check that the bounds of a confinement do not contradict each
-/// other.
-///
-/// The constants of this and other build-time checks are evaluated when the
-/// machine code is generated for the concrete values of the generic
-/// parameters. Thus, a violation stops `cargo build` and `cargo test`, but
-/// not `cargo check`.
-pub(crate) struct Bounds<const MIN_LEN: usize, const MAX_LEN: usize>;
-
-impl<const MIN_LEN: usize, const MAX_LEN: usize> Bounds<MIN_LEN, MAX_LEN> {
-    pub(crate) const VALID: () = assert!(
-        MIN_LEN <= MAX_LEN,
-        "the lower bound of the confinement exceeds its upper bound"
-    );
-}
-
-/// Build-time check that a collection of `LEN` items fits a confinement.
-pub(crate) struct FitsLen<const MIN_LEN: usize, const MAX_LEN: usize, const LEN: usize>;
-
-impl<const MIN_LEN: usize, const MAX_LEN: usize, const LEN: usize> FitsLen<MIN_LEN, MAX_LEN, LEN> {
-    pub(crate) const VALID: () = assert!(
-        MIN_LEN <= LEN && LEN <= MAX_LEN,
-        "the number of items is outside of the confinement bounds"
-    );
-}
-
-/// Build-time check that a confinement cannot be empty.
-pub(crate) struct NeverEmpty<const MIN_LEN: usize>;
-
-impl<const MIN_LEN: usize> NeverEmpty<MIN_LEN> {
-    pub(crate) const VALID: () = assert!(MIN_LEN > 0, "the confinement may be empty");
-}
-
-/// Build-time check that the maximum length fits an integer limit.
-pub(crate) struct LenWithin<const MAX_LEN: usize, const LIMIT: usize>;
-
-impl<const MAX_LEN: usize, const LIMIT: usize> LenWithin<MAX_LEN, LIMIT> {
-    pub(crate) const VALID: () = assert!(
-        MAX_LEN <= LIMIT,
-        "the upper bound of the confinement exceeds the integer limit"
-    );
-}
-
-/// Build-time check that the bounds of the second confinement include the
-/// bounds of the first one.
-pub(crate) struct Widens<
-    const MIN_LEN: usize,
-    const MAX_LEN: usize,
-    const MIN_LEN2: usize,
-    const MAX_LEN2: usize,
->;
-
-impl<const MIN_LEN: usize, const MAX_LEN: usize, const MIN_LEN2: usize, const MAX_LEN2: usize>
-    Widens<MIN_LEN, MAX_LEN, MIN_LEN2, MAX_LEN2>
-{
-    pub(crate) const VALID: () = assert!(
-        MIN_LEN2 <= MIN_LEN && MAX_LEN <= MAX_LEN2,
-        "the new bounds of the confinement do not include the current bounds"
-    );
-}
-
-/// Build-time check that a confinement is able to hold a single item of any
-/// size.
-pub(crate) struct HoldsItem<C: ItemLen, const MAX_LEN: usize>(PhantomData<C>);
-
-impl<C: ItemLen, const MAX_LEN: usize> HoldsItem<C, MAX_LEN> {
-    pub(crate) const VALID: () = assert!(
-        C::MAX_ITEM_LEN <= MAX_LEN,
-        "the upper bound of the confinement is less than the largest size of a single item"
-    );
-}
-
-impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Deref
-    for Confined<C, MIN_LEN, MAX_LEN>
-{
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Deref for Confined<C, MIN_LEN, MAX_LEN> {
     type Target = C;
 
     fn deref(&self) -> &Self::Target {
@@ -223,7 +160,7 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Deref
 impl<C, const MIN_LEN: usize, const MAX_LEN: usize> AsRef<[C::Item]>
     for Confined<C, MIN_LEN, MAX_LEN>
 where
-    C: Collection + AsRef<[C::Item]>,
+    C: ItemLen + AsRef<[C::Item]>,
 {
     fn as_ref(&self) -> &[C::Item] {
         self.0.as_ref()
@@ -233,7 +170,7 @@ where
 impl<C, const MIN_LEN: usize, const MAX_LEN: usize> AsMut<[C::Item]>
     for Confined<C, MIN_LEN, MAX_LEN>
 where
-    C: Collection + AsMut<[C::Item]>,
+    C: ItemLen + AsMut<[C::Item]>,
 {
     fn as_mut(&mut self) -> &mut [C::Item] {
         self.0.as_mut()
@@ -243,7 +180,7 @@ where
 impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Borrow<[C::Item]>
     for Confined<C, MIN_LEN, MAX_LEN>
 where
-    C: Collection + Borrow<[C::Item]>,
+    C: ItemLen + Borrow<[C::Item]>,
 {
     fn borrow(&self) -> &[C::Item] {
         self.0.borrow()
@@ -253,15 +190,14 @@ where
 impl<C, const MIN_LEN: usize, const MAX_LEN: usize> BorrowMut<[C::Item]>
     for Confined<C, MIN_LEN, MAX_LEN>
 where
-    C: Collection + BorrowMut<[C::Item]>,
+    C: ItemLen + BorrowMut<[C::Item]>,
 {
     fn borrow_mut(&mut self) -> &mut [C::Item] {
         self.0.borrow_mut()
     }
 }
 
-impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> IntoIterator
-    for Confined<C, MIN_LEN, MAX_LEN>
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> IntoIterator for Confined<C, MIN_LEN, MAX_LEN>
 where
     C: IntoIterator,
 {
@@ -273,7 +209,7 @@ where
     }
 }
 
-impl<'c, C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> IntoIterator
+impl<'c, C, const MIN_LEN: usize, const MAX_LEN: usize> IntoIterator
     for &'c Confined<C, MIN_LEN, MAX_LEN>
 where
     &'c C: IntoIterator,
@@ -286,7 +222,7 @@ where
     }
 }
 
-impl<'c, C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> IntoIterator
+impl<'c, C, const MIN_LEN: usize, const MAX_LEN: usize> IntoIterator
     for &'c mut Confined<C, MIN_LEN, MAX_LEN>
 where
     &'c mut C: IntoIterator,
@@ -301,8 +237,8 @@ where
 
 impl<'c, C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
 where
-    C: Collection + 'c,
-    &'c mut C: IntoIterator<Item = &'c mut <C as Collection>::Item>,
+    C: ItemLen + 'c,
+    &'c mut C: IntoIterator<Item = &'c mut C::Item>,
 {
     /// Returns an iterator that allows modifying each value.
     ///
@@ -315,7 +251,7 @@ where
 
 impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
 where
-    C: KeyedCollection,
+    C: CollectionMap,
 {
     /// Returns an iterator that allows modifying each value for each key.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut C::Value> {
@@ -330,8 +266,7 @@ where
     }
 }
 
-impl<C: Collection, I, const MIN_LEN: usize, const MAX_LEN: usize> Index<I>
-    for Confined<C, MIN_LEN, MAX_LEN>
+impl<C, I, const MIN_LEN: usize, const MAX_LEN: usize> Index<I> for Confined<C, MIN_LEN, MAX_LEN>
 where
     C: Index<I>,
 {
@@ -343,8 +278,7 @@ where
     }
 }
 
-impl<C: Collection, I, const MIN_LEN: usize, const MAX_LEN: usize> IndexMut<I>
-    for Confined<C, MIN_LEN, MAX_LEN>
+impl<C, I, const MIN_LEN: usize, const MAX_LEN: usize> IndexMut<I> for Confined<C, MIN_LEN, MAX_LEN>
 where
     C: IndexMut<I>,
 {
@@ -354,8 +288,7 @@ where
     }
 }
 
-impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Display
-    for Confined<C, MIN_LEN, MAX_LEN>
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Display for Confined<C, MIN_LEN, MAX_LEN>
 where
     C: Display,
 {
@@ -364,52 +297,56 @@ where
     }
 }
 
-impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN> {
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
+where
+    C: ItemLen,
+    C::Access: Access<C, Item = <C as ItemLen>::Item>,
+{
     pub(crate) fn does_fit_confinement(col: &C) -> Result<(), Error> {
-        let len = col.len();
-        if len < MIN_LEN {
-            return Err(Error::Undersize {
-                len,
-                min_len: MIN_LEN,
-            });
-        }
-        if len > MAX_LEN {
-            return Err(Error::Oversize {
-                len,
-                max_len: MAX_LEN,
-            });
-        }
+        let len = C::Access::len(col);
+        (len >= MIN_LEN).ok_or(Error::Undersize {
+            len,
+            min_len: MIN_LEN,
+        })?;
+        (len <= MAX_LEN).ok_or(Error::Oversize {
+            len,
+            max_len: MAX_LEN,
+        })?;
         Ok(())
     }
 
     pub(crate) fn check_undersize(&self) -> Result<(), Error> {
         let len = self.len();
-        if len <= MIN_LEN {
-            return Err(Error::Undersize {
-                len,
-                min_len: MIN_LEN,
-            });
-        }
+        (len > MIN_LEN).ok_or(Error::Undersize {
+            len,
+            min_len: MIN_LEN,
+        })?;
         Ok(())
     }
 
     pub(crate) fn check_oversize(&self) -> Result<(), Error> {
         let len = self.len();
-        if len >= MAX_LEN {
-            return Err(Error::Oversize {
-                len,
-                max_len: MAX_LEN,
-            });
-        }
+        (len < MAX_LEN).ok_or(Error::Oversize {
+            len,
+            max_len: MAX_LEN,
+        })?;
         Ok(())
     }
 
     pub(crate) fn check_boundary(&self, index: usize) -> Result<(), Error> {
         let len = self.len();
-        if index >= len {
-            return Err(Error::OutOfBoundary { index, len });
-        }
+        (index < len).ok_or(Error::OutOfBoundary { index, len })?;
         Ok(())
+    }
+
+    /// Returns the number of items in the collection.
+    pub fn len(&self) -> usize {
+        C::Access::len(&self.0)
+    }
+
+    /// Returns whether the collection contains no items.
+    pub fn is_empty(&self) -> bool {
+        C::Access::len(&self.0) == 0
     }
 
     /// Constructs confinement over collection which was already size-checked.
@@ -442,7 +379,12 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
     // We can't use `impl TryFrom` due to the conflict with core library blanked
     // implementation
     pub fn try_from(col: C) -> Result<Self, Error> {
-        let () = Bounds::<MIN_LEN, MAX_LEN>::VALID;
+        const {
+            assert!(
+                MIN_LEN <= MAX_LEN,
+                "the lower bound of the confinement exceeds its upper bound"
+            )
+        };
         Self::does_fit_confinement(&col)?;
         Ok(Self(col))
     }
@@ -472,41 +414,13 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
     pub fn widen<const MIN_LEN2: usize, const MAX_LEN2: usize>(
         self,
     ) -> Confined<C, MIN_LEN2, MAX_LEN2> {
-        let () = Widens::<MIN_LEN, MAX_LEN, MIN_LEN2, MAX_LEN2>::VALID;
+        const {
+            assert!(
+                MIN_LEN2 <= MIN_LEN && MAX_LEN <= MAX_LEN2,
+                "the new bounds of the confinement do not include the current bounds"
+            )
+        };
         Confined(self.0)
-    }
-
-    /// Tries to construct a confinement with a collection of elements taken
-    /// from an iterator. Fails if the number of items in the collection
-    /// exceeds one of the confinement bounds.
-    ///
-    /// The iterator is not read past the item with which the collection
-    /// exceeds the upper bound, and [`Error::Oversize`] reports the length of
-    /// the collection at that moment.
-    pub fn try_from_iter<I: IntoIterator<Item = C::Item>>(iter: I) -> Result<Self, Error> {
-        let mut col = C::with_capacity(MIN_LEN);
-        for item in iter {
-            col.push(item);
-            let len = col.len();
-            if len > MAX_LEN {
-                return Err(Error::Oversize {
-                    len,
-                    max_len: MAX_LEN,
-                });
-            }
-        }
-        Self::try_from(col)
-    }
-
-    /// Construct a confinement with a collection of elements taken from an
-    /// iterator.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number of items in the collection exceeds one
-    /// of the confinement bounds.
-    pub fn from_iter_checked<I: IntoIterator<Item = C::Item>>(iter: I) -> Self {
-        Self::try_from_iter(iter).expect("collection size mismatch, use try_from_iter instead")
     }
 
     /// Returns reference to the inner collection type.
@@ -530,10 +444,7 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
     /// left, which may happen before the string reaches the maximal length.
     /// [`Error::Oversize`] reports the length of the collection before the
     /// call.
-    pub fn push(&mut self, elem: C::Item) -> Result<(), Error>
-    where
-        C: ItemLen,
-    {
+    pub fn push(&mut self, elem: C::Item) -> Result<(), Error> {
         let len = self.len();
         if len.saturating_add(C::item_len(&elem)) > MAX_LEN {
             return Err(Error::Oversize {
@@ -541,7 +452,7 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
                 max_len: MAX_LEN,
             });
         }
-        self.0.push(elem);
+        C::Access::push(&mut self.0, elem);
         Ok(())
     }
 
@@ -552,10 +463,7 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
     /// The elements are added one by one with [`Self::push`]. The method stops
     /// at the first element which doesn't fit; the elements before it remain
     /// in the collection.
-    pub fn extend<T: IntoIterator<Item = C::Item>>(&mut self, iter: T) -> Result<(), Error>
-    where
-        C: ItemLen,
-    {
+    pub fn extend<T: IntoIterator<Item = C::Item>>(&mut self, iter: T) -> Result<(), Error> {
         for elem in iter {
             self.push(elem)?;
         }
@@ -583,7 +491,144 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
     }
 }
 
-impl<C: KeyedCollection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN> {
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
+where
+    C: CollectionSet + ItemLen<Item = <C as Collection>::Item>,
+    C::Access: Access<C, Item = <C as ItemLen>::Item>,
+{
+    pub(crate) fn remove_from_set(
+        &mut self,
+        item: &<C as Collection>::Item,
+        remove: impl FnOnce(&mut C, &<C as Collection>::Item) -> bool,
+    ) -> Result<bool, Error> {
+        if !self.0.contains(item) {
+            return Ok(false);
+        }
+        self.check_undersize()?;
+        Ok(remove(&mut self.0, item))
+    }
+
+    pub(crate) fn take_from_set(
+        &mut self,
+        item: &<C as Collection>::Item,
+        take: impl FnOnce(&mut C, &<C as Collection>::Item) -> Option<<C as Collection>::Item>,
+    ) -> Result<Option<<C as Collection>::Item>, Error> {
+        if !self.0.contains(item) {
+            return Ok(None);
+        }
+        self.check_undersize()?;
+        Ok(take(&mut self.0, item))
+    }
+}
+
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
+where
+    C: CollectionMap + ItemLen<Item = (C::Key, C::Value)>,
+    C::Access: Access<C, Item = <C as ItemLen>::Item>,
+{
+    pub(crate) fn remove_from_map<T>(
+        &mut self,
+        key: &C::Key,
+        remove: impl FnOnce(&mut C, &C::Key) -> Option<T>,
+    ) -> Result<Option<T>, Error> {
+        if !self.0.contains_key(key) {
+            return Ok(None);
+        }
+        self.check_undersize()?;
+        Ok(remove(&mut self.0, key))
+    }
+}
+
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
+where
+    C: Collection + ItemLen<Item = <C as Collection>::Item>,
+{
+    /// Tries to construct a confinement with a collection of elements taken
+    /// from an iterator. Fails if the number of items in the collection
+    /// exceeds one of the confinement bounds.
+    ///
+    /// The iterator is not read past the item with which the collection
+    /// exceeds the upper bound, and [`Error::Oversize`] reports the length of
+    /// the collection at that moment.
+    pub fn try_from_iter<I: IntoIterator<Item = <C as Collection>::Item>>(
+        iter: I,
+    ) -> Result<Self, Error> {
+        let mut col = C::with_capacity(MIN_LEN);
+        for item in iter {
+            Collection::push(&mut col, item);
+            let len = C::Access::len(&col);
+            if len > MAX_LEN {
+                return Err(Error::Oversize {
+                    len,
+                    max_len: MAX_LEN,
+                });
+            }
+        }
+        Self::try_from(col)
+    }
+
+    /// Constructs a confinement with a collection of elements taken from an
+    /// iterator.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of items in the collection exceeds one of the
+    /// confinement bounds.
+    pub fn from_iter_checked<I: IntoIterator<Item = <C as Collection>::Item>>(iter: I) -> Self {
+        Self::try_from_iter(iter).expect("collection size mismatch, use try_from_iter instead")
+    }
+}
+
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
+where
+    C: CollectionAlloc + ItemLen<Access = ViaCollectionAlloc, Item = <C as CollectionAlloc>::Item>,
+    C::Access: Access<C, Item = <C as ItemLen>::Item>,
+{
+    /// Tries to construct a confinement with a collection of elements taken
+    /// from an iterator, using the supplied allocator.
+    ///
+    /// Like [`Self::try_from_iter`], this stops reading as soon as the
+    /// collection exceeds the upper bound. The allocator need not implement
+    /// [`Default`].
+    pub fn try_from_iter_in<I: IntoIterator<Item = <C as ItemLen>::Item>>(
+        iter: I,
+        allocator: C::Allocator,
+    ) -> Result<Self, Error> {
+        let mut col = C::with_capacity_in(MIN_LEN, allocator);
+        for item in iter {
+            C::Access::push(&mut col, item);
+            let len = C::Access::len(&col);
+            if len > MAX_LEN {
+                return Err(Error::Oversize {
+                    len,
+                    max_len: MAX_LEN,
+                });
+            }
+        }
+        Self::try_from(col)
+    }
+
+    /// Constructs a confinement from an iterator, using the supplied
+    /// allocator.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of items in the collection exceeds one of the
+    /// confinement bounds.
+    pub fn from_iter_checked_in<I: IntoIterator<Item = <C as ItemLen>::Item>>(
+        iter: I,
+        allocator: C::Allocator,
+    ) -> Self {
+        Self::try_from_iter_in(iter, allocator)
+            .expect("collection size mismatch, use try_from_iter_in instead")
+    }
+}
+
+impl<C, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN, MAX_LEN>
+where
+    C: CollectionMap + ItemLen<Item = (C::Key, C::Value)>,
+    C::Access: Access<C, Item = <C as ItemLen>::Item>,
+{
     /// Gets mutable reference to an element of the collection.
     pub fn get_mut(&mut self, key: &C::Key) -> Option<&mut C::Value> {
         self.0.get_mut(key)
@@ -689,5 +734,38 @@ impl<C: KeyedCollection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C,
             });
         }
         Ok(())
+    }
+}
+
+impl<'a, C> Entry<'a, C>
+where
+    C: CollectionMap + 'a,
+{
+    /// Returns a reference to this entry's key.
+    pub fn key(&self) -> &C::Key {
+        self.0.key()
+    }
+
+    /// Inserts the provided value if the entry is vacant, then returns it.
+    pub fn or_insert(self, default: C::Value) -> &'a mut C::Value {
+        self.0.or_insert(default)
+    }
+
+    /// Inserts a value produced by `default` if the entry is vacant.
+    pub fn or_insert_with<F: FnOnce() -> C::Value>(self, default: F) -> &'a mut C::Value {
+        self.0.or_insert_with(default)
+    }
+
+    /// Inserts the default value if the entry is vacant.
+    pub fn or_default(self) -> &'a mut C::Value
+    where
+        C::Value: Default,
+    {
+        self.0.or_default()
+    }
+
+    /// Modifies the value in an occupied entry.
+    pub fn and_modify<F: FnOnce(&mut C::Value)>(self, f: F) -> Self {
+        Entry(self.0.and_modify(f))
     }
 }

@@ -160,6 +160,126 @@ macro_rules! medium_vec {
     )
 }
 
+/// Helper macro to construct a confined `VecDeque` of `TinyDeque` type.
+#[macro_export]
+macro_rules! tiny_deque {
+    () => {
+        $crate::TinyDeque::new()
+    };
+    ($elem:expr; $n:expr) => {
+        $crate::TinyDeque::try_from_iter($crate::alloc::vec![$elem; $n])
+            .expect("inline tiny_deque contains invalid number of items")
+    };
+    ($($item:expr),+ $(,)?) => {
+        $crate::TinyDeque::try_from_iter([$($item,)+])
+            .expect("inline tiny_deque contains invalid number of items")
+    };
+}
+
+/// Helper macro to construct a confined `VecDeque` of `SmallDeque` type.
+#[macro_export]
+macro_rules! small_deque {
+    () => {
+        $crate::SmallDeque::new()
+    };
+    ($elem:expr; $n:expr) => {
+        $crate::SmallDeque::try_from_iter($crate::alloc::vec![$elem; $n])
+            .expect("inline small_deque contains invalid number of items")
+    };
+    ($($item:expr),+ $(,)?) => {
+        $crate::SmallDeque::try_from_iter([$($item,)+])
+            .expect("inline small_deque contains invalid number of items")
+    };
+}
+
+/// Helper macro to construct a confined `VecDeque` of `MediumDeque` type.
+#[macro_export]
+macro_rules! medium_deque {
+    () => {
+        $crate::MediumDeque::new()
+    };
+    ($elem:expr; $n:expr) => {
+        $crate::MediumDeque::try_from_iter($crate::alloc::vec![$elem; $n])
+            .expect("inline medium_deque contains invalid number of items")
+    };
+    ($($item:expr),+ $(,)?) => {
+        $crate::MediumDeque::try_from_iter([$($item,)+])
+            .expect("inline medium_deque contains invalid number of items")
+    };
+}
+
+/// Helper macro to construct a confined `LinkedList` of `TinyList` type.
+#[macro_export]
+macro_rules! tiny_list {
+    () => {
+        $crate::TinyList::new()
+    };
+    ($($item:expr),+ $(,)?) => {
+        $crate::TinyList::try_from_iter([$($item,)+])
+            .expect("inline tiny_list contains invalid number of items")
+    };
+}
+
+/// Helper macro to construct a confined `LinkedList` of `SmallList` type.
+#[macro_export]
+macro_rules! small_list {
+    () => {
+        $crate::SmallList::new()
+    };
+    ($($item:expr),+ $(,)?) => {
+        $crate::SmallList::try_from_iter([$($item,)+])
+            .expect("inline small_list contains invalid number of items")
+    };
+}
+
+/// Helper macro to construct a confined `LinkedList` of `MediumList` type.
+#[macro_export]
+macro_rules! medium_list {
+    () => {
+        $crate::MediumList::new()
+    };
+    ($($item:expr),+ $(,)?) => {
+        $crate::MediumList::try_from_iter([$($item,)+])
+            .expect("inline medium_list contains invalid number of items")
+    };
+}
+
+/// Helper macro to construct a confined `BinaryHeap` of `TinyHeap` type.
+#[macro_export]
+macro_rules! tiny_heap {
+    () => {
+        $crate::TinyHeap::new()
+    };
+    ($($item:expr),+ $(,)?) => {
+        $crate::TinyHeap::try_from_iter([$($item,)+])
+            .expect("inline tiny_heap contains invalid number of items")
+    };
+}
+
+/// Helper macro to construct a confined `BinaryHeap` of `SmallHeap` type.
+#[macro_export]
+macro_rules! small_heap {
+    () => {
+        $crate::SmallHeap::new()
+    };
+    ($($item:expr),+ $(,)?) => {
+        $crate::SmallHeap::try_from_iter([$($item,)+])
+            .expect("inline small_heap contains invalid number of items")
+    };
+}
+
+/// Helper macro to construct a confined `BinaryHeap` of `MediumHeap` type.
+#[macro_export]
+macro_rules! medium_heap {
+    () => {
+        $crate::MediumHeap::new()
+    };
+    ($($item:expr),+ $(,)?) => {
+        $crate::MediumHeap::try_from_iter([$($item,)+])
+            .expect("inline medium_heap contains invalid number of items")
+    };
+}
+
 /// Helper macro to construct confined [`HashSet`](std::collections::HashSet)
 /// of a [`TinyHashSet`](crate::TinyHashSet) type
 #[macro_export]
@@ -331,7 +451,7 @@ macro_rules! medium_bmap {
 /// Helper macro to construct confined [`indexmap::IndexSet`] of a
 /// [`TinyIndexSet`](crate::TinyIndexSet) type
 #[macro_export]
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 macro_rules! tiny_iset {
     () => {
         $crate::TinyIndexSet::new()
@@ -345,7 +465,7 @@ macro_rules! tiny_iset {
 /// Helper macro to construct confined [`indexmap::IndexSet`] of a
 /// [`SmallIndexSet`](crate::SmallIndexSet) type
 #[macro_export]
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 macro_rules! small_iset {
     () => {
         $crate::SmallIndexSet::new()
@@ -359,7 +479,7 @@ macro_rules! small_iset {
 /// Helper macro to construct confined [`indexmap::IndexSet`] of a
 /// [`MediumIndexSet`](crate::MediumIndexSet) type
 #[macro_export]
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 macro_rules! medium_iset {
     () => {
         $crate::MediumIndexSet::new()
@@ -373,7 +493,7 @@ macro_rules! medium_iset {
 /// Helper macro to construct confined [`indexmap::IndexMap`] of a
 /// [`TinyIndexMap`](crate::TinyIndexMap) type
 #[macro_export]
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 macro_rules! tiny_imap {
     () => {
         $crate::TinyIndexMap::new()
@@ -387,7 +507,7 @@ macro_rules! tiny_imap {
 /// Helper macro to construct confined [`indexmap::IndexMap`] of a
 /// [`SmallIndexMap`](crate::SmallIndexMap) type
 #[macro_export]
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 macro_rules! small_imap {
     () => {
         $crate::SmallIndexMap::new()
@@ -401,7 +521,7 @@ macro_rules! small_imap {
 /// Helper macro to construct confined [`indexmap::IndexMap`] of a
 /// [`MediumIndexMap`](crate::MediumIndexMap) type
 #[macro_export]
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 macro_rules! medium_imap {
     () => {
         $crate::MediumIndexMap::new()

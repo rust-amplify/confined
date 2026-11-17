@@ -21,11 +21,15 @@
 
 #[cfg(feature = "std")]
 mod io {
+    use alloc::alloc::Allocator;
+    use alloc::vec::Vec;
     use std::io;
 
     use crate::Confined;
 
-    impl<const MIN_LEN: usize, const MAX_LEN: usize> io::Write for Confined<Vec<u8>, MIN_LEN, MAX_LEN> {
+    impl<A: Allocator, const MIN_LEN: usize, const MAX_LEN: usize> io::Write
+        for Confined<Vec<u8, A>, MIN_LEN, MAX_LEN>
+    {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             if buf.is_empty() {
                 return Ok(0);
@@ -48,6 +52,7 @@ mod io {
 
 #[cfg(feature = "hex")]
 mod hex {
+    use alloc::alloc::Allocator;
     use alloc::vec::Vec;
     use core::fmt::{self, Formatter, LowerHex, UpperHex};
 
@@ -55,13 +60,17 @@ mod hex {
 
     use crate::Confined;
 
-    impl<const MIN_LEN: usize, const MAX_LEN: usize> LowerHex for Confined<Vec<u8>, MIN_LEN, MAX_LEN> {
+    impl<A: Allocator, const MIN_LEN: usize, const MAX_LEN: usize> LowerHex
+        for Confined<Vec<u8, A>, MIN_LEN, MAX_LEN>
+    {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
             f.write_str(&self.0.to_hex())
         }
     }
 
-    impl<const MIN_LEN: usize, const MAX_LEN: usize> UpperHex for Confined<Vec<u8>, MIN_LEN, MAX_LEN> {
+    impl<A: Allocator, const MIN_LEN: usize, const MAX_LEN: usize> UpperHex
+        for Confined<Vec<u8, A>, MIN_LEN, MAX_LEN>
+    {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
             f.write_str(&self.0.to_hex().to_uppercase())
         }
@@ -70,7 +79,9 @@ mod hex {
     /// The number of bytes must fit the confinement. Otherwise the result is
     /// [`hex::Error::InvalidLength`] with the violated bound and the number of
     /// bytes in the data.
-    impl<const MIN_LEN: usize, const MAX_LEN: usize> FromHex for Confined<Vec<u8>, MIN_LEN, MAX_LEN> {
+    impl<A: Allocator + Default, const MIN_LEN: usize, const MAX_LEN: usize> FromHex
+        for Confined<Vec<u8, A>, MIN_LEN, MAX_LEN>
+    {
         fn from_byte_iter<I>(iter: I) -> Result<Self, hex::Error>
         where
             I: Iterator<Item = Result<u8, hex::Error>> + ExactSizeIterator + DoubleEndedIterator,
@@ -79,7 +90,10 @@ mod hex {
             // fit are not allocated, and after it, since an iterator may
             // report a wrong length.
             check_len::<MIN_LEN, MAX_LEN>(iter.len())?;
-            let bytes = Vec::<u8>::from_byte_iter(iter)?;
+            let mut bytes = Vec::<u8, A>::with_capacity_in(iter.len(), A::default());
+            for byte in iter {
+                bytes.push(byte?);
+            }
             check_len::<MIN_LEN, MAX_LEN>(bytes.len())?;
             Ok(Self(bytes))
         }

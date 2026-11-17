@@ -22,9 +22,12 @@
 use alloc::collections::vec_deque::{self, VecDeque};
 use core::ops::RangeBounds;
 
-use crate::{Confined, Error, ItemLen, ZERO};
+use crate::{Confined, Error, ItemLen, ViaCollection, ZERO};
 
-impl<T> ItemLen for VecDeque<T> {}
+impl<T> ItemLen for VecDeque<T> {
+    type Item = T;
+    type Access = ViaCollection;
+}
 
 /// Methods which can't report an error, so they exist only for the deques
 /// without a lower bound. A deque with a lower bound is shortened with

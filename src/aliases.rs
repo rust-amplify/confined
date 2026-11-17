@@ -19,7 +19,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
+use alloc::alloc::Global;
+use alloc::collections::{BTreeMap, BTreeSet, BinaryHeap, LinkedList, VecDeque};
 use alloc::string::String;
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
@@ -40,7 +41,8 @@ pub type MediumString = Confined<String, ZERO, U24MAX>;
 pub type LargeString = Confined<String, ZERO, U32MAX>;
 /// Confined [`String`]. The limits are set in bytes of UTF-8 encoding, not in
 /// characters.
-pub type ConfinedString<const MIN: usize = 0, const MAX: usize = U64MAX> = Confined<String, MIN, MAX>;
+pub type ConfinedString<const MIN: usize = 0, const MAX: usize = U64MAX> =
+    Confined<String, MIN, MAX>;
 /// [`String`] which contains at least a single byte.
 pub type NonEmptyString<const MAX: usize = U64MAX> = Confined<String, ONE, MAX>;
 
@@ -65,30 +67,32 @@ pub type ConfinedAscii<const MIN: usize = 0, const MAX: usize = U64MAX> =
 pub type NonEmptyAscii<const MAX: usize = U64MAX> = Confined<AsciiString, ONE, MAX>;
 
 /// [`Vec<u8>`] with maximum 255 bytes.
-pub type TinyBlob = Confined<Vec<u8>, ZERO, U8MAX>;
+pub type TinyBlob<A = Global> = Confined<Vec<u8, A>, ZERO, U8MAX>;
 /// [`Vec<u8>`] with maximum 2^16-1 bytes.
-pub type SmallBlob = Confined<Vec<u8>, ZERO, U16MAX>;
+pub type SmallBlob<A = Global> = Confined<Vec<u8, A>, ZERO, U16MAX>;
 /// [`Vec<u8>`] with maximum 2^24-1 bytes.
-pub type MediumBlob = Confined<Vec<u8>, ZERO, U24MAX>;
+pub type MediumBlob<A = Global> = Confined<Vec<u8, A>, ZERO, U24MAX>;
 /// [`Vec<u8>`] with maximum 2^32-1 bytes.
-pub type LargeBlob = Confined<Vec<u8>, ZERO, U32MAX>;
+pub type LargeBlob<A = Global> = Confined<Vec<u8, A>, ZERO, U32MAX>;
 /// Confined [`Vec<u8>`].
-pub type ConfinedBlob<const MIN: usize = 0, const MAX: usize = U64MAX> = Confined<Vec<u8>, MIN, MAX>;
+pub type ConfinedBlob<const MIN: usize = 0, const MAX: usize = U64MAX, A = Global> =
+    Confined<Vec<u8, A>, MIN, MAX>;
 /// [`Vec<u8>`] which contains at least a single byte.
-pub type NonEmptyBlob<const MAX: usize = U64MAX> = Confined<Vec<u8>, ONE, MAX>;
+pub type NonEmptyBlob<const MAX: usize = U64MAX, A = Global> = Confined<Vec<u8, A>, ONE, MAX>;
 
 /// [`Vec`] with maximum 255 items of type `T`.
-pub type TinyVec<T> = Confined<Vec<T>, ZERO, U8MAX>;
+pub type TinyVec<T, A = Global> = Confined<Vec<T, A>, ZERO, U8MAX>;
 /// [`Vec`] with maximum 2^16-1 items of type `T`.
-pub type SmallVec<T> = Confined<Vec<T>, ZERO, U16MAX>;
+pub type SmallVec<T, A = Global> = Confined<Vec<T, A>, ZERO, U16MAX>;
 /// [`Vec`] with maximum 2^24-1 items of type `T`.
-pub type MediumVec<T> = Confined<Vec<T>, ZERO, U24MAX>;
+pub type MediumVec<T, A = Global> = Confined<Vec<T, A>, ZERO, U24MAX>;
 /// [`Vec`] with maximum 2^32-1 items of type `T`.
-pub type LargeVec<T> = Confined<Vec<T>, ZERO, U32MAX>;
+pub type LargeVec<T, A = Global> = Confined<Vec<T, A>, ZERO, U32MAX>;
 /// Confined [`Vec`].
-pub type ConfinedVec<T, const MIN: usize = 0, const MAX: usize = U64MAX> = Confined<Vec<T>, MIN, MAX>;
+pub type ConfinedVec<T, const MIN: usize = 0, const MAX: usize = U64MAX, A = Global> =
+    Confined<Vec<T, A>, MIN, MAX>;
 /// [`Vec`] which contains at least a single item.
-pub type NonEmptyVec<T, const MAX: usize = U64MAX> = Confined<Vec<T>, ONE, MAX>;
+pub type NonEmptyVec<T, const MAX: usize = U64MAX, A = Global> = Confined<Vec<T, A>, ONE, MAX>;
 
 /// [`VecDeque`] with maximum 255 items of type `T`.
 pub type TinyDeque<T> = Confined<VecDeque<T>, ZERO, U8MAX>;
@@ -103,6 +107,34 @@ pub type ConfinedDeque<T, const MIN: usize = 0, const MAX: usize = U64MAX> =
     Confined<VecDeque<T>, MIN, MAX>;
 /// [`VecDeque`] which contains at least a single item.
 pub type NonEmptyDeque<T, const MAX: usize = U64MAX> = Confined<VecDeque<T>, ONE, MAX>;
+
+/// [`LinkedList`] with maximum 255 items of type `T`.
+pub type TinyList<T> = Confined<LinkedList<T>, ZERO, U8MAX>;
+/// [`LinkedList`] with maximum 2^16-1 items of type `T`.
+pub type SmallList<T> = Confined<LinkedList<T>, ZERO, U16MAX>;
+/// [`LinkedList`] with maximum 2^24-1 items of type `T`.
+pub type MediumList<T> = Confined<LinkedList<T>, ZERO, U24MAX>;
+/// [`LinkedList`] with maximum 2^32-1 items of type `T`.
+pub type LargeList<T> = Confined<LinkedList<T>, ZERO, U32MAX>;
+/// Confined [`LinkedList`].
+pub type ConfinedList<T, const MIN: usize = 0, const MAX: usize = U64MAX> =
+    Confined<LinkedList<T>, MIN, MAX>;
+/// [`LinkedList`] which contains at least a single item.
+pub type NonEmptyList<T, const MAX: usize = U64MAX> = Confined<LinkedList<T>, ONE, MAX>;
+
+/// [`BinaryHeap`] with maximum 255 items of type `T`.
+pub type TinyHeap<T> = Confined<BinaryHeap<T>, ZERO, U8MAX>;
+/// [`BinaryHeap`] with maximum 2^16-1 items of type `T`.
+pub type SmallHeap<T> = Confined<BinaryHeap<T>, ZERO, U16MAX>;
+/// [`BinaryHeap`] with maximum 2^24-1 items of type `T`.
+pub type MediumHeap<T> = Confined<BinaryHeap<T>, ZERO, U24MAX>;
+/// [`BinaryHeap`] with maximum 2^32-1 items of type `T`.
+pub type LargeHeap<T> = Confined<BinaryHeap<T>, ZERO, U32MAX>;
+/// Confined [`BinaryHeap`].
+pub type ConfinedHeap<T, const MIN: usize = 0, const MAX: usize = U64MAX> =
+    Confined<BinaryHeap<T>, MIN, MAX>;
+/// [`BinaryHeap`] which contains at least a single item.
+pub type NonEmptyHeap<T, const MAX: usize = U64MAX> = Confined<BinaryHeap<T>, ONE, MAX>;
 
 /// [`HashSet`] with maximum 255 items of type `T`.
 #[cfg(feature = "std")]
@@ -173,42 +205,42 @@ pub type ConfinedOrdMap<K, V, const MIN: usize = 0, const MAX: usize = U64MAX> =
 pub type NonEmptyOrdMap<K, V, const MAX: usize = U64MAX> = Confined<BTreeMap<K, V>, ONE, MAX>;
 
 /// [`indexmap::IndexSet`] with maximum 255 items of type `T`.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type TinyIndexSet<T> = Confined<indexmap::IndexSet<T>, ZERO, U8MAX>;
 /// [`indexmap::IndexSet`] with maximum 2^16-1 items of type `T`.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type SmallIndexSet<T> = Confined<indexmap::IndexSet<T>, ZERO, U16MAX>;
 /// [`indexmap::IndexSet`] with maximum 2^24-1 items of type `T`.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type MediumIndexSet<T> = Confined<indexmap::IndexSet<T>, ZERO, U24MAX>;
 /// [`indexmap::IndexSet`] with maximum 2^32-1 items of type `T`.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type LargeIndexSet<T> = Confined<indexmap::IndexSet<T>, ZERO, U32MAX>;
 /// Confined [`indexmap::IndexSet`].
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type ConfinedIndexSet<T, const MIN: usize = 0, const MAX: usize = U64MAX> =
     Confined<indexmap::IndexSet<T>, MIN, MAX>;
 /// [`indexmap::IndexSet`] which contains at least a single item.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type NonEmptyIndexSet<T, const MAX: usize = U64MAX> = Confined<indexmap::IndexSet<T>, ONE, MAX>;
 
 /// [`indexmap::IndexMap`] with maximum 255 items.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type TinyIndexMap<K, V> = Confined<indexmap::IndexMap<K, V>, ZERO, U8MAX>;
 /// [`indexmap::IndexMap`] with maximum 2^16-1 items.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type SmallIndexMap<K, V> = Confined<indexmap::IndexMap<K, V>, ZERO, U16MAX>;
 /// [`indexmap::IndexMap`] with maximum 2^24-1 items.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type MediumIndexMap<K, V> = Confined<indexmap::IndexMap<K, V>, ZERO, U24MAX>;
 /// [`indexmap::IndexMap`] with maximum 2^32-1 items.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type LargeIndexMap<K, V> = Confined<indexmap::IndexMap<K, V>, ZERO, U32MAX>;
 /// Confined [`indexmap::IndexMap`].
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type ConfinedIndexMap<K, V, const MIN: usize = 0, const MAX: usize = U64MAX> =
     Confined<indexmap::IndexMap<K, V>, MIN, MAX>;
 /// [`indexmap::IndexMap`] which contains at least a single item.
-#[cfg(feature = "indexmap")]
+#[cfg(all(feature = "indexmap", feature = "std"))]
 pub type NonEmptyIndexMap<K, V, const MAX: usize = U64MAX> =
     Confined<indexmap::IndexMap<K, V>, ONE, MAX>;

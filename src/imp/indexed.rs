@@ -19,60 +19,33 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-use core::hash::Hash;
+use core::hash::{BuildHasher, Hash};
 
 use indexmap::{IndexMap, IndexSet, map};
 
-use crate::{Confined, Entry, Error, ItemLen};
+use crate::{Confined, Entry, Error, ItemLen, ViaCollection};
 
-impl<T: Eq + Hash> ItemLen for IndexSet<T> {}
+impl<T: Eq + Hash, S: BuildHasher + Default> ItemLen for IndexSet<T, S> {
+    type Item = T;
+    type Access = ViaCollection;
+}
 
-impl<K: Eq + Hash, V> ItemLen for IndexMap<K, V> {}
+impl<K: Eq + Hash, V, S: BuildHasher + Default> ItemLen for IndexMap<K, V, S> {
+    type Item = (K, V);
+    type Access = ViaCollection;
+}
 
-impl<'a, K: Eq + Hash, V> Entry<'a, IndexMap<K, V>> {
-    /// Returns a reference to this entry's key.
-    pub fn key(&self) -> &K {
-        self.0.key()
-    }
-
-    /// Ensures a value is in the entry by inserting the default if empty, and
-    /// returns a mutable reference to the value in the entry.
-    pub fn or_insert(self, default: V) -> &'a mut V {
-        self.0.or_insert(default)
-    }
-
-    /// Ensures a value is in the entry by inserting the result of the default
-    /// function if empty, and returns a mutable reference to the value in the
-    /// entry.
-    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
-        self.0.or_insert_with(default)
-    }
-
+impl<'a, K: Eq + Hash, V, S: BuildHasher + Default> Entry<'a, IndexMap<K, V, S>> {
     /// Ensures a value is in the entry by inserting, if empty, the result of
     /// the default function, which gets a reference to the key of the entry.
     /// Returns a mutable reference to the value in the entry.
     pub fn or_insert_with_key<F: FnOnce(&K) -> V>(self, default: F) -> &'a mut V {
         self.0.or_insert_with_key(default)
     }
-
-    /// Ensures a value is in the entry by inserting the default value if
-    /// empty, and returns a mutable reference to the value in the entry.
-    pub fn or_default(self) -> &'a mut V
-    where
-        V: Default,
-    {
-        self.0.or_default()
-    }
-
-    /// Provides in-place mutable access to an occupied entry before any
-    /// potential inserts into the map.
-    pub fn and_modify<F: FnOnce(&mut V)>(self, f: F) -> Self {
-        Entry(self.0.and_modify(f))
-    }
 }
 
-impl<T: Eq + Hash, const MIN_LEN: usize, const MAX_LEN: usize>
-    Confined<IndexSet<T>, MIN_LEN, MAX_LEN>
+impl<T: Eq + Hash, S: BuildHasher + Default, const MIN_LEN: usize, const MAX_LEN: usize>
+    Confined<IndexSet<T, S>, MIN_LEN, MAX_LEN>
 {
     /// Removes a value from the set, returning whether the value was at the
     /// set previously.
@@ -81,11 +54,7 @@ impl<T: Eq + Hash, const MIN_LEN: usize, const MAX_LEN: usize>
     ///
     /// Errors if the minimum confinement is not met after the removal.
     pub fn remove(&mut self, elem: &T) -> Result<bool, Error> {
-        if !self.0.contains(elem) {
-            return Ok(false);
-        }
-        self.check_undersize()?;
-        Ok(self.0.shift_remove(elem))
+        self.remove_from_set(elem, |set, elem| set.shift_remove(elem))
     }
 
     /// Removes and returns the value in the set, if any, that is equal to the
@@ -95,16 +64,12 @@ impl<T: Eq + Hash, const MIN_LEN: usize, const MAX_LEN: usize>
     ///
     /// Errors if the minimum confinement is not met after the removal.
     pub fn take(&mut self, elem: &T) -> Result<Option<T>, Error> {
-        if !self.0.contains(elem) {
-            return Ok(None);
-        }
-        self.check_undersize()?;
-        Ok(self.0.shift_take(elem))
+        self.take_from_set(elem, |set, elem| set.shift_take(elem))
     }
 }
 
-impl<K: Eq + Hash, V, const MIN_LEN: usize, const MAX_LEN: usize>
-    Confined<IndexMap<K, V>, MIN_LEN, MAX_LEN>
+impl<K: Eq + Hash, V, S: BuildHasher + Default, const MIN_LEN: usize, const MAX_LEN: usize>
+    Confined<IndexMap<K, V, S>, MIN_LEN, MAX_LEN>
 {
     /// Removes a key from the map, returning the value at the key if the key
     /// was previously in the map.
@@ -113,11 +78,7 @@ impl<K: Eq + Hash, V, const MIN_LEN: usize, const MAX_LEN: usize>
     ///
     /// Errors if the minimum confinement is not met after the removal.
     pub fn remove(&mut self, key: &K) -> Result<Option<V>, Error> {
-        if !self.0.contains_key(key) {
-            return Ok(None);
-        }
-        self.check_undersize()?;
-        Ok(self.0.shift_remove(key))
+        self.remove_from_map(key, |map, key| map.shift_remove(key))
     }
 
     /// Creates a consuming iterator visiting all the keys in arbitrary order.

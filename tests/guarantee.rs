@@ -27,10 +27,12 @@ use std::cell::Cell;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+#[cfg(feature = "indexmap")]
+use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::panic::{self, AssertUnwindSafe};
 
 #[cfg(feature = "indexmap")]
-use confined::indexmap::IndexMap;
+type IndexMap<K, V> = confined::indexmap::IndexMap<K, V, BuildHasherDefault<DefaultHasher>>;
 use confined::{Confined, Error, ItemLen, U8MAX, U16MAX, U24MAX, U32MAX};
 
 #[test]
@@ -78,7 +80,7 @@ fn ascii_from_str_checks_limits() {
             min_len: 1
         }))
     );
-    assert!(matches!("€".parse::<Short>(), Err(AsciiError::Ascii(_))));
+    std::assert_matches!("€".parse::<Short>(), Err(AsciiError::Ascii(_)));
     assert_eq!("abc".parse::<Short>().unwrap().as_str(), "abc");
 }
 
@@ -462,7 +464,9 @@ fn ascii_first_and_last() {
 fn index_set_first_and_last() {
     use confined::indexmap::IndexSet;
 
-    let set = Confined::<IndexSet<u8>, 2, 8>::try_from_iter([3, 1, 2]).unwrap();
+    let set =
+        Confined::<IndexSet<u8, BuildHasherDefault<DefaultHasher>>, 2, 8>::try_from_iter([3, 1, 2])
+            .unwrap();
     assert_eq!(*set.first(), 3);
     assert_eq!(*set.last(), 2);
 }

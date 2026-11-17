@@ -23,12 +23,14 @@ use alloc::borrow::ToOwned;
 use alloc::string::String;
 use core::str::FromStr;
 
-use crate::{Confined, Error, ItemLen, ZERO};
+use crate::{Confined, Error, ItemLen, ViaCollection, ZERO};
 
 /// The length of a string is measured in bytes, and a `char` takes from one to
 /// four bytes in the UTF-8 encoding.
 impl ItemLen for String {
-    const MAX_ITEM_LEN: usize = 4;
+    type Item = char;
+    type Access = ViaCollection;
+    const MAX_ITEM_LEN: usize = char::MAX_LEN_UTF8;
 
     fn item_len(item: &char) -> usize {
         item.len_utf8()

@@ -75,6 +75,4 @@ impl Display for Error {
     }
 }
 
-// TODO: Use Error from core with MSRV bump to 1.81.0
-#[cfg(feature = "std")]
-impl std::error::Error for Error {}
+impl core::error::Error for Error {}
