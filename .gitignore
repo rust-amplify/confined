@@ -8,6 +8,7 @@
 **/*.rs.bk
 
 .idea
+.junie
 
 *.swp
 

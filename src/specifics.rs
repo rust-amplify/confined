@@ -19,12 +19,13 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-use core::ops::Index;
+use core::ops::{Index, IndexMut};
 
 use amplify_num::u24;
 use collections::{Collection, KeyedCollection};
 
-use super::{Confined, ONE, U8, U16, U24, U32, ZERO};
+use super::{Confined, ItemLen, ONE, U8, U16, U24, U32, ZERO};
+use crate::base::{Bounds, HoldsItem};
 
 impl<C: Collection, const MAX_LEN: usize> Confined<C, ZERO, MAX_LEN> {
     /// Removes all elements from the confined collection.
@@ -60,11 +61,47 @@ where
 
 impl<C: Collection, const MAX_LEN: usize> Confined<C, ONE, MAX_LEN>
 where
-    C: Default,
+    C: Default + ItemLen,
 {
     /// Constructs a confinement with a collection made of a single required
     /// element.
+    ///
+    /// The upper bound of the confinement must leave room for an element of
+    /// any size. For most of the collections it means `MAX_LEN >= 1`. The
+    /// length of a [`String`](alloc::string::String) is measured in bytes, and
+    /// a single `char` may take up to four of them, so a string needs
+    /// `MAX_LEN >= 4`.
+    ///
+    /// A type which doesn't meet this requirement fails to build. The failure
+    /// is reported by `cargo build` and `cargo test`, but not by
+    /// `cargo check`.
+    ///
+    /// ```
+    /// # use confined::Confined;
+    /// let vec = Confined::<Vec<u8>, 1, 1>::with(7);
+    /// assert_eq!(vec.as_slice(), &[7]);
+    /// ```
+    ///
+    /// ```compile_fail,E0080
+    /// # use confined::Confined;
+    /// let vec = Confined::<Vec<u8>, 1, 0>::with(7);
+    /// assert_eq!(vec.as_slice(), &[7]);
+    /// ```
+    ///
+    /// ```
+    /// # use confined::Confined;
+    /// let s = Confined::<String, 1, 4>::with('a');
+    /// assert_eq!(s.as_str(), "a");
+    /// ```
+    ///
+    /// ```compile_fail,E0080
+    /// # use confined::Confined;
+    /// let s = Confined::<String, 1, 2>::with('a');
+    /// assert_eq!(s.as_str(), "a");
+    /// ```
     pub fn with(elem: C::Item) -> Self {
+        let () = Bounds::<ONE, MAX_LEN>::VALID;
+        let () = HoldsItem::<C, MAX_LEN>::VALID;
         let mut c = C::default();
         c.push(elem);
         Self(c)
@@ -86,7 +123,22 @@ where
     }
 }
 
-// TODO: Add first_mut and last_mut
+// TODO: Do it with `const { assert!(MIN_LEN > 0) };` inline instead of using just `ONCE`
+impl<C, const MAX_LEN: usize> Confined<C, ONE, MAX_LEN>
+where
+    C: Collection + IndexMut<usize, Output = C::Item>,
+{
+    /// Returns a mutable reference to the first element.
+    pub fn first_mut(&mut self) -> &mut C::Item {
+        self.0.index_mut(0)
+    }
+
+    /// Returns a mutable reference to the last element.
+    pub fn last_mut(&mut self) -> &mut C::Item {
+        let last = self.len() - 1;
+        self.0.index_mut(last)
+    }
+}
 
 impl<C: Collection, const MIN_LEN: usize> Confined<C, MIN_LEN, U8> {
     /// Returns the number of elements in the confined collection as `u8`. The
@@ -141,7 +193,26 @@ where
 {
     /// Constructs a confinement with a collection made of a single required
     /// key-value pair.
+    ///
+    /// A type which upper bound is zero can't hold the pair and fails to
+    /// build. The failure is reported by `cargo build` and `cargo test`, but
+    /// not by `cargo check`.
+    ///
+    /// ```
+    /// # use std::collections::BTreeMap;
+    /// # use confined::Confined;
+    /// let map = Confined::<BTreeMap<u8, char>, 1, 1>::with_key_value(7, 'a');
+    /// assert_eq!(map.len(), 1);
+    /// ```
+    ///
+    /// ```compile_fail,E0080
+    /// # use std::collections::BTreeMap;
+    /// # use confined::Confined;
+    /// let map = Confined::<BTreeMap<u8, char>, 1, 0>::with_key_value(7, 'a');
+    /// assert_eq!(map.len(), 1);
+    /// ```
     pub fn with_key_value(key: C::Key, value: C::Value) -> Self {
+        let () = Bounds::<ONE, MAX_LEN>::VALID;
         let mut c = C::default();
         c.insert(key, value);
         Self(c)

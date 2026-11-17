@@ -47,11 +47,12 @@ fn main() -> Result<(), Error> {
 }
 ```
 
-> **Project status.** The crate is at version 0.4.10 and is not published on
-> crates.io yet. The code was recently split out of the `confinement` module of
-> the [`amplify`](https://github.com/rust-amplify/rust-amplify) library and the
-> migration is unfinished. Read [Status and known limitations](#status-and-known-limitations)
-> before relying on it.
+> **Project status.** The crate is at version 0.5.0 and is not published on
+> crates.io yet. The code was split out of the `confinement` module of the
+> [`amplify`](https://github.com/rust-amplify/rust-amplify) library. Version
+> 0.5.0 changes parts of that API; [CHANGELOG.md](./CHANGELOG.md) lists every
+> breaking change with its migration. What is still missing is listed under
+> [Status and known limitations](#status-and-known-limitations).
 
 ## Contents
 
@@ -90,7 +91,7 @@ in every size-changing method. A violation is returned as an
 [`Error`](#errors). The exceptions are the functions whose names end in
 `_checked`, which panic instead.
 
-The compiler contributes two things.
+The compiler contributes three things.
 
 1. **The unchecked mutators are out of reach.** `Confined` implements `Deref`
    but not `DerefMut`, so all read-only methods of the inner collection are
@@ -98,12 +99,16 @@ The compiler contributes two things.
    not. Only the checked replacements defined on `Confined` can change the
    size.
 2. **Methods exist only for the limits that make them valid.** Calling one on
-   a type with other limits is a compile error.
+   a type with other limits is a compile error. The first table below lists
+   them.
+3. **Sizes known at build time are checked at build time.** Where every size
+   involved is a constant, a wrong combination stops the build instead of
+   returning an error at run time. The second table lists these checks.
 
 | Available only when | Items                                                                                                                                                |
 |---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `MIN_LEN` is `0`    | `new()`, `with_capacity()`, `Default`, `clear()`; `pop()` on `Vec`, `String` and `AsciiString`; `retain()` on maps; `drain()` on `HashMap`; `io::Write` on `Vec<u8>` |
-| `MIN_LEN` is `1`    | `with(item)`; `with_key_value(k, v)` on maps; `first()` and `last()` returning `&T` instead of `Option<&T>` on `Vec`, `VecDeque` and other collections indexable by position |
+| `MIN_LEN` is `0`    | `new()`, `with_capacity()`, `Default`, `clear()`; `pop()` on `Vec`, `String` and `AsciiString`; `pop_front()`, `pop_back()`, `truncate()` and `drain()` on `VecDeque`; `retain()` on maps; `drain()` on `HashMap`; `io::Write` on `Vec<u8>` |
+| `MIN_LEN` is `1`    | `with(item)`; `with_key_value(k, v)` on maps; `first()` and `last()` returning `&T` instead of `Option<&T>` on `Vec`, `VecDeque`, `AsciiString` and `IndexSet`; `first_mut()` and `last_mut()` returning `&mut T` on `Vec`, `VecDeque` and `AsciiString` |
 | `MAX_LEN` is `U8`   | `len_u8() -> u8`                                                                                                                                     |
 | `MAX_LEN` is `U16`  | `len_u16() -> u16`                                                                                                                                   |
 | `MAX_LEN` is `U24`  | `len_u24() -> amplify_num::u24`                                                                                                                      |
@@ -111,6 +116,19 @@ The compiler contributes two things.
 
 The match is exact: a type with `MIN_LEN = 2` is never empty either, but it
 does not get `first()` and `last()`.
+
+| Function                                    | The build fails unless                            |
+|---------------------------------------------|---------------------------------------------------|
+| `from_array([T; N])` on `Vec`               | `MIN_LEN <= N` and `N <= MAX_LEN`                 |
+| `widen::<MIN2, MAX2>()`                     | `MIN2 <= MIN_LEN` and `MAX_LEN <= MAX2`           |
+| `with(item)`                                | `MAX_LEN >= 1`, or `MAX_LEN >= 4` for a `String`  |
+| `with_key_value(k, v)`                      | `MAX_LEN >= 1`                                    |
+| `try_from` and the constructors built on it | `MIN_LEN <= MAX_LEN`                              |
+
+For example, `Confined::<Vec<u8>, 1, 0>::with(7)` stops the build with the
+message "the lower bound of the confinement exceeds its upper bound". These
+checks run when machine code is generated: `cargo build` and `cargo test`
+report them, but `cargo check` does not.
 
 ## Installation
 
@@ -135,14 +153,14 @@ The minimum supported Rust version is 1.75.0.
 |------------|:-------:|-----------------------------------------------------------------------------------------------------------|
 | `std`      |   yes   | `HashMap` and `HashSet` support, `std::io::Write` for confined `Vec<u8>`, `std::error::Error` for `Error`  |
 | `hex`      |   yes   | `{:x}` / `{:X}` formatting and `amplify_num::hex::FromHex` for confined `Vec<u8>`                          |
-| `ascii`    |   no    | Support for `ascii::AsciiString`; re-exports the `ascii` crate as `confined::ascii`                        |
-| `indexmap` |   no    | Support for `IndexMap` and `IndexSet`; re-exports the `indexmap` crate as `confined::indexmap`             |
-| `serde`    |   no    | `Serialize` and `Deserialize` for `Confined`                                                               |
+| `ascii`    |   no    | Support for `ascii::AsciiString` and the `AsciiError` type; re-exports the `ascii` crate as `confined::ascii` |
+| `indexmap` |   no    | Support for `IndexMap` and `IndexSet`; re-exports the `indexmap` crate as `confined::indexmap`; enables `std` |
+| `serde`    |   no    | `Serialize` and `Deserialize` for `Confined`; deserialization checks the limits                            |
 | `all`      |   no    | Everything above                                                                                           |
 
-The crate is written for `no_std` + `alloc`, but a build without the `std`
-feature does not compile at the moment (see
-[limitations](#status-and-known-limitations)).
+The crate works in `no_std` + `alloc` environments when the default features
+are disabled. Two combinations still need `std`; see
+[limitations](#status-and-known-limitations).
 
 ## Usage
 
@@ -157,12 +175,17 @@ let a = UpToThree::try_from(vec![1, 2])?; // from an owned collection
 let b = UpToThree::try_from_iter([1, 2])?; // from an iterator
 let c = UpToThree::try_from_slice(&[1, 2])?; // `Vec` only: clones a slice
 let d = UpToThree::from_checked(vec![1, 2]); // panics instead of returning `Err`
-assert!(a == b && b == c && c == d);
+let e = UpToThree::from_array([1, 2]); // `Vec` only: the length is checked by the build
+assert!(a == b && b == c && c == d && d == e);
 
 // A lower limit of 0 or 1 unlocks infallible constructors.
 let empty = Confined::<Vec<u8>, 0, 3>::new();
 let single = UpToThree::with(7);
 assert!(empty.is_empty() && single.len() == 1);
+
+// Moving to wider limits cannot fail, so it is not checked at run time.
+let wide: Confined<Vec<u8>, 0, 255> = single.widen();
+assert_eq!(wide.len_u8(), 1);
 
 // Getting the plain collection back.
 let borrowed: &Vec<u8> = a.as_unconfined();
@@ -174,20 +197,29 @@ assert_eq!(cloned, owned);
 Ok::<(), confined::Error>(())
 ```
 
+`try_from_iter` stops reading the iterator as soon as the collection exceeds
+`MAX_LEN`, so an oversized or endless iterator is rejected without being
+collected. The `Oversize` error then carries the length at which it stopped.
+
 `Confined::try_from` is an inherent function that takes the collection itself.
 (It cannot be a `TryFrom` impl because of the blanket impl in `core`.) Strings
-additionally implement the real `TryFrom<&str>` trait, which the inherent
-function shadows, so use `try_into()` for string slices:
+additionally implement `FromStr` and the real `TryFrom<&str>` trait. The
+inherent function shadows the latter, so use `parse()` or `try_into()` for
+string slices:
 
 ```rust
-use confined::Confined;
+use confined::{Confined, Error};
 
 type Name = Confined<String, 1, 32>;
 
-let name: Name = "satoshi".try_into()?;
+let name: Name = "satoshi".parse()?;
 assert_eq!(name.to_string(), "satoshi");
+let same: Name = "satoshi".try_into()?;
+assert_eq!(name, same);
 
-Ok::<(), confined::Error>(())
+assert_eq!("".parse::<Name>(), Err(Error::Undersize { len: 0, min_len: 1 }));
+
+Ok::<(), Error>(())
 ```
 
 ### Modifying
@@ -211,6 +243,12 @@ assert_eq!(v.remove(7), Err(Error::OutOfBoundary { index: 7, len: 3 }));
 assert_eq!(v.pop(), Some(4)); // exists only because `MIN_LEN` is 0
 v.clear(); // same
 
+// A list that is never empty gives direct access to both of its ends.
+let mut v = Confined::<Vec<u8>, 1, 3>::from_array([1, 2]);
+*v.first_mut() += 10;
+*v.last_mut() += 20;
+assert_eq!(v.as_slice(), &[11, 22]);
+
 Ok::<(), Error>(())
 ```
 
@@ -231,17 +269,27 @@ assert_eq!(votes.insert("carol", 1), Err(Error::Oversize { len: 2, max_len: 2 })
 *votes.get_mut(&"bob").unwrap() += 1;
 assert_eq!(votes[&"bob"], 2);
 
+// `entry()` checks the upper limit itself, so `or_insert` cannot fail.
+*votes.entry("bob")?.or_insert(0) += 1;
+assert_eq!(votes[&"bob"], 3);
+assert!(votes.entry("carol").is_err()); // a new key, and the map is full
+
 // Removing a missing key is not an error. Removing the last allowed entry is.
 assert_eq!(votes.remove(&"dave")?, None);
-assert_eq!(votes.remove(&"bob")?, Some(2));
+assert_eq!(votes.remove(&"bob")?, Some(3));
 assert_eq!(votes.remove(&"alice"), Err(Error::Undersize { len: 1, min_len: 1 }));
 
 Ok::<(), Error>(())
 ```
 
+`entry()` returns `confined::Entry`, not the entry type of the wrapped map. It
+has `key`, `or_insert`, `or_insert_with`, `or_insert_with_key`, `or_default`
+and `and_modify`, and nothing that removes the entry: removal goes through
+`remove` on the map, which checks the lower limit.
+
 Sets use the generic `push` to add an item and `remove` / `take` to delete one.
 
-### Size constants and your own aliases
+### Size constants, aliases and macros
 
 The crate exports constants for the common limits:
 
@@ -255,15 +303,36 @@ The crate exports constants for the common limits:
 | `U32`    | `u32::MAX`                                                  |
 | `U64`    | `u64::MAX as usize`, which is `usize::MAX` on 64-bit targets |
 
-They make short, readable aliases, and they are what the `len_u8()` family of
-methods is keyed on:
+They are what the `len_u8()` family of methods is keyed on, and what the
+ready-made aliases are built from. The name of an alias is a size prefix
+followed by a collection suffix, for example `TinyVec<T>` or
+`NonEmptyOrdMap<K, V>`:
+
+| Prefix     | Limits                                                        |
+|------------|---------------------------------------------------------------|
+| `Tiny`     | `0..=U8`                                                      |
+| `Small`    | `0..=U16`                                                     |
+| `Medium`   | `0..=U24`                                                     |
+| `Large`    | `0..=U32`                                                     |
+| `NonEmpty` | `1..=MAX`, where `MAX` is a parameter with the default `U64`  |
+| `Confined` | `MIN..=MAX`, both parameters, with the defaults `0` and `U64` |
+
+| Suffix                 | Collection                      | Feature    |
+|------------------------|---------------------------------|------------|
+| `String`               | `String`                        |            |
+| `Ascii`                | `AsciiString`                   | `ascii`    |
+| `Blob`                 | `Vec<u8>`                       |            |
+| `Vec`                  | `Vec<T>`                        |            |
+| `Deque`                | `VecDeque<T>`                   |            |
+| `OrdSet`, `OrdMap`     | `BTreeSet<T>`, `BTreeMap<K, V>` |            |
+| `HashSet`, `HashMap`   | `HashSet<T>`, `HashMap<K, V>`   | `std`      |
+| `IndexSet`, `IndexMap` | `IndexSet<T>`, `IndexMap<K, V>` | `indexmap` |
+
+`confined::SmallVec<T>` is therefore a `Vec` of up to 65 535 items. It is not
+related to the `smallvec` crate.
 
 ```rust
-use confined::{Confined, ONE, U16, U64, U8, ZERO};
-
-type TinyBlob = Confined<Vec<u8>, ZERO, U8>; // up to 255 bytes
-type SmallString = Confined<String, ZERO, U16>; // up to 65 535 bytes
-type NonEmptyVec<T, const MAX: usize = U64> = Confined<Vec<T>, ONE, MAX>;
+use confined::{NonEmptyVec, SmallString, TinyBlob};
 
 /// Writes a blob prefixed with its length as a single byte.
 fn encode(blob: &TinyBlob, out: &mut Vec<u8>) {
@@ -285,17 +354,51 @@ assert_eq!(*items.last(), 3);
 Ok::<(), confined::Error>(())
 ```
 
-The crate itself does not export such aliases yet; see
-[limitations](#status-and-known-limitations).
+An alias of your own takes one line, for example
+`type Signers = Confined<Vec<PublicKey>, 1, 15>;`.
+
+The `Tiny`, `Small` and `Medium` aliases have constructor macros. Their names
+start with `tiny_`, `small_` or `medium_`:
+
+| Macro suffix     | Builds                            | Feature    |
+|------------------|-----------------------------------|------------|
+| `s!`             | a `String` from a string literal  |            |
+| `blob!`          | a `Vec<u8>`                       |            |
+| `vec!`           | a `Vec<T>`                        |            |
+| `bset!`, `bmap!` | a `BTreeSet<T>`, `BTreeMap<K, V>` |            |
+| `set!`, `map!`   | a `HashSet<T>`, `HashMap<K, V>`   | `std`      |
+| `iset!`, `imap!` | an `IndexSet<T>`, `IndexMap<K, V>` | `indexmap` |
+
+```rust
+use confined::{small_s, tiny_blob, tiny_bmap, tiny_vec, TinyVec};
+
+let names = tiny_vec!["alice", "bob"];
+assert_eq!(names.len_u8(), 2);
+
+let zeroes = tiny_blob![0u8; 32];
+assert_eq!(zeroes.len_u8(), 32);
+
+let greeting = small_s!("hello");
+assert_eq!(greeting.len_u16(), 5);
+
+let ages = tiny_bmap! { "alice" => 30u8, "bob" => 25 };
+assert_eq!(ages[&"bob"], 25);
+
+let empty: TinyVec<u8> = tiny_vec![];
+assert!(empty.is_empty());
+```
+
+A macro panics if its content does not fit the limits of the type it builds.
 
 ### Byte strings
 
 With the default `std` and `hex` features a confined `Vec<u8>` can be used as a
-bounded write buffer and printed as hex:
+bounded write buffer, printed as hex and parsed from hex:
 
 ```rust
 use std::io::Write;
 
+use amplify_num::hex::{self, FromHex};
 use confined::Confined;
 
 let mut blob = Confined::<Vec<u8>, 0, 4>::new();
@@ -304,11 +407,18 @@ assert!(blob.write_all(&[0x00]).is_err()); // does not fit, nothing is written
 assert_eq!(format!("{blob:x}"), "deadbeef");
 assert_eq!(format!("{blob:X}"), "DEADBEEF");
 
+assert_eq!(Confined::<Vec<u8>, 0, 4>::from_hex("deadbeef"), Ok(blob));
+assert_eq!(
+    Confined::<Vec<u8>, 0, 3>::from_hex("deadbeef"),
+    Err(hex::Error::InvalidLength(3, 4)) // the limit and the actual length
+);
+
 Ok::<(), std::io::Error>(())
 ```
 
 A `write` call either stores the whole buffer or fails with
-`io::ErrorKind::OutOfMemory`.
+`io::ErrorKind::OutOfMemory`. The `FromHex` trait and its error type come from
+the [`amplify_num`](https://crates.io/crates/amplify_num) crate.
 
 ### ASCII strings
 
@@ -316,14 +426,22 @@ With the `ascii` feature:
 
 ```rust
 use confined::ascii::AsciiString;
-use confined::Confined;
+use confined::{AsciiError, Confined, Error};
 
 type Ticker = Confined<AsciiString, 1, 8>;
 
-let ticker: Ticker = "BTC".try_into().unwrap();
+let ticker: Ticker = "BTC".parse()?;
 assert_eq!(ticker.len(), 3);
 assert!(Ticker::try_from(AsciiString::new()).is_err()); // too short
-assert!(<Ticker as TryFrom<&str>>::try_from("₿").is_err()); // not ASCII
+
+// A string slice can fail in two ways.
+assert!(matches!("₿".parse::<Ticker>(), Err(AsciiError::Ascii(_))));
+assert_eq!(
+    "BITCOIN-USD".parse::<Ticker>(),
+    Err(AsciiError::Confinement(Error::Oversize { len: 11, max_len: 8 }))
+);
+
+Ok::<(), AsciiError>(())
 ```
 
 ### Errors
@@ -344,10 +462,11 @@ when the `std` feature is on.
 
 ### Serde
 
-With the `serde` feature `Confined` derives `Serialize` and `Deserialize` as a
-newtype, so in formats like JSON it looks exactly like the inner collection.
-Deserialization does not validate the limits yet; see
-[limitations](#status-and-known-limitations).
+With the `serde` feature `Confined` implements `Serialize` and `Deserialize`
+as a newtype, so in formats like JSON it looks exactly like the inner
+collection. Deserialization checks the limits: data with too few or too many
+items are rejected with a custom error of the deserializer, which carries the
+message of the matching [`Error`](#errors).
 
 ## Supported collections
 
@@ -357,11 +476,11 @@ implements it for the types below. Map types also implement `KeyedCollection`.
 
 | Collection       | Feature          | Checked methods specific to it                                                                                                |
 |------------------|------------------|-------------------------------------------------------------------------------------------------------------------------------|
-| `Vec<T>`         |                  | `try_from_slice`, `from_slice_checked`, `as_slice`, `into_vec`, `iter`, `remove`, `pop`¹                                        |
+| `Vec<T>`         |                  | `from_array`, `try_from_slice`, `from_slice_checked`, `as_slice`, `into_vec`, `iter`, `remove`, `pop`¹                          |
 | `Vec<u8>`        | `std`, `hex`     | `std::io::Write`¹ (`std`); `LowerHex`, `UpperHex`, `FromHex` (`hex`)                                                            |
-| `String`         |                  | `TryFrom<&str>`, `remove`, `pop`¹                                                                                             |
-| `AsciiString`    | `ascii`          | `TryFrom<&str>`, `remove`, `pop`¹                                                                                             |
-| `VecDeque<T>`    |                  | `push_front`, `push_back`, `pop_front`, `pop_back`, `remove`, `drain`, `truncate`                                              |
+| `String`         |                  | `TryFrom<&str>`, `FromStr`, `remove`, `pop`¹                                                                                  |
+| `AsciiString`    | `ascii`          | `TryFrom<&str>`, `FromStr`, `remove`, `pop`¹                                                                                  |
+| `VecDeque<T>`    |                  | `push_front`, `push_back`, `remove`, `pop_front`¹, `pop_back`¹, `drain`¹, `truncate`¹                                          |
 | `BTreeSet<T>`    |                  | `remove`, `take`                                                                                                              |
 | `HashSet<T>`     | `std`            | `remove`, `take`                                                                                                              |
 | `IndexSet<T>`    | `indexmap`       | `remove`, `take`                                                                                                              |
@@ -374,27 +493,33 @@ implements it for the types below. Map types also implement `KeyedCollection`.
 `BTreeMap` keys must implement `Hash` in addition to `Ord`, because
 `KeyedCollection` requires it.
 
+`push`, `extend` and `with` also need the `ItemLen` trait of this crate, which
+tells how much one item adds to the length. It is implemented for all the
+collections above. A collection of your own needs `impl ItemLen for MyCollection {}`
+if every item counts as one.
+
 On top of that, every confined collection gets the generic API:
 
 | Purpose           | Items                                                                                                                              |
 |-------------------|------------------------------------------------------------------------------------------------------------------------------------|
 | Create            | `try_from`, `try_from_iter`, `from_checked`, `from_iter_checked`                                                                    |
+| Change limits     | `widen` to limits that include the current ones                                                                                    |
 | Read              | `Deref<Target = C>`, `as_unconfined`, `to_unconfined`, `AsRef<[T]>`, `Borrow<[T]>`, `Index`, `Display`, iteration over `&Confined`     |
 | Change items      | `IndexMut`, `AsMut<[T]>`, `BorrowMut<[T]>`, `iter_mut`, iteration over `&mut Confined`                                               |
 | Change size       | `push`, `extend`                                                                                                                   |
 | Unwrap            | `release`, by-value `IntoIterator`                                                                                                 |
-| Maps              | `insert`, `entry`, `get_mut`, `values_mut`, `keyed_values_mut`, `try_retain`                                                        |
+| Maps              | `insert`, `entry`, `get_mut`, `values_mut`, `keyed_values_mut`, `try_retain`, `retain`¹                                             |
 | Re-validate       | `with_mut(f)` returns `Err` and `as_mut_checked(f)` panics if the limits do not hold after the closure has run                      |
 | Derived traits    | `Clone`, `Debug`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Hash`, whenever the inner collection implements them                     |
-
-A few older names are kept as deprecated aliases: `from_collection_unsafe`,
-`from_iter_unsafe`, `from_slice_unsafe`, `as_inner`, `to_inner`, `into_inner`,
-`unbox` and `push_from`.
 
 ## Behaviour worth knowing
 
 - **Length is whatever the collection calls its length.** For `String` that is
   bytes, not characters: `"añb"` has three characters but needs `MAX_LEN >= 4`.
+  `push` and `remove` count the bytes of the character they add or take away,
+  so `push('€')` needs three free bytes. `with()` needs `MAX_LEN >= 4` for a
+  `String`, whatever the character is, because the check is made at build time
+  and a character may take four bytes.
 - **`extend` is not atomic.** It pushes items one by one and stops at the first
   one that does not fit. The items before it stay in the collection.
 - **Sets are checked before insertion.** `push` on a full set returns
@@ -406,42 +531,36 @@ A few older names are kept as deprecated aliases: `from_collection_unsafe`,
   character returns `OutOfBoundary` instead of panicking.
 - **`IndexMap` and `IndexSet` removal preserves order.** It uses the `shift_*`
   operations.
-- **`BTreeMap::append` checks the sum of both lengths.** It can report
-  `Oversize` when the maps share keys and the merged result would have fit.
+- **`try_retain` stops at the minimum.** It removes rejected entries in
+  iteration order while the map stays above `MIN_LEN`. If the predicate rejects
+  more than that, the remaining ones are kept and the call returns `Undersize`
+  with the length the map would have had. The predicate is still called once
+  for every entry.
+- **`BTreeMap::append` needs a source without a minimum.** It empties the other
+  map, so that map must have `MIN_LEN = 0`. Keys present in both maps do not
+  count towards `MAX_LEN`. If the result does not fit, neither map is changed.
+- **`HashMap::reserve` is capped.** It reserves room for at most
+  `MAX_LEN - len` more entries, whatever amount is asked for.
 
 ## Status and known limitations
 
-The points below were checked against the current `master`. They are gaps in
-the present state of the code, not design decisions, and this section should
-shrink as they are fixed.
-
-**Paths that skip the size check.** A value produced this way can be outside
-its limits, so validate it yourself, for example by passing
-`value.release()` through `try_from` again.
-
-- `FromStr` (`"...".parse()`), `FromHex` and serde's `Deserialize` construct
-  the wrapper without checking the limits.
-- On `VecDeque`, `pop_front`, `pop_back`, `truncate` and `drain` ignore
-  `MIN_LEN`.
-- `BTreeMap::append` empties the other map whatever its `MIN_LEN` is.
-- `try_retain` returns `Undersize` after the items have already been removed,
-  so the map stays below its minimum.
-
-**Other rough edges.**
-
-- Building without the `std` feature fails (for one, `src/imp/string.rs` lacks
-  a `ToOwned` import), so `no_std` does not work yet.
-- `from_slice_checked` panics when the slice length equals `MIN_LEN`, including
-  an empty slice for `MIN_LEN = 0`. `try_from_slice` is not affected.
-- `AsciiError`, the error type of `TryFrom<&str>` for confined `AsciiString`,
-  is not re-exported and cannot be named outside the crate.
-- `src/confinement.rs` is the original single-file module from `amplify`. It
-  is not part of the module tree and is not compiled. It still holds what has
-  not been ported: the type aliases (`TinyVec`, `SmallString`, `NonEmptyVec`
-  and so on), the constructor macros (`tiny_vec!`, `small_bmap!` and so on) and
-  the unit tests. As a result `cargo test` currently runs no tests.
-- Deprecation notes say "since 4.7.0". That is a version of `amplify`, not of
-  this crate.
+- **Not on crates.io.** The crate and its `collections` dependency have to be
+  taken from git; see [Installation](#installation).
+- **`indexmap` needs `std`.** The feature enables `std` itself, because the
+  `collections` crate supports `IndexMap` and `IndexSet` only with the default
+  hasher.
+- **`ascii` with `serde` needs `std`.** Without it the build fails inside the
+  `ascii` crate (version 1.1.0).
+- **Rust 1.75.0 with the `indexmap` feature needs an older `indexmap`.**
+  Version 2.11.4 builds with that toolchain and 2.14.2 does not. The
+  `Cargo.lock` of this repository pins 2.11.4; a project that depends on
+  `confined` has to pin it itself, for example with
+  `cargo update -p indexmap --precise 2.11.4`.
+- **`Entry` has methods only for the built-in maps.** A map type of your own
+  gets `entry()`, but the returned `Entry` has no methods for it.
+- **`smallvec` is not supported.** The `amplify` version of this code had
+  aliases and macros for `SmallVec`; the `collections` crate has no
+  implementation for it.
 
 ## Repository layout
 
@@ -451,17 +570,23 @@ src/
 ├── base.rs          the `Confined` type and everything generic over the collection
 ├── specifics.rs     methods that exist only for particular limits (MIN 0, MIN 1, MAX U8...)
 ├── error.rs         the `Error` enum
-├── imp/             methods for one concrete collection type each
-│   ├── vec.rs       Vec<T>
-│   ├── bytes.rs     Vec<u8>: io::Write and hex
-│   ├── string.rs    String
-│   ├── ascii.rs     AsciiString            (feature `ascii`)
-│   ├── deque.rs     VecDeque<T>
-│   ├── btree.rs     BTreeSet, BTreeMap
-│   ├── hashed.rs    HashSet, HashMap       (feature `std`)
-│   └── indexed.rs   IndexSet, IndexMap     (feature `indexmap`)
-└── confinement.rs   legacy single-file version, not compiled
+├── aliases.rs       type aliases: TinyVec, SmallString, NonEmptyOrdMap...
+├── macros.rs        constructor macros: tiny_vec!, small_s!, tiny_bmap!...
+└── imp/             methods for one concrete collection type each
+    ├── vec.rs       Vec<T>
+    ├── bytes.rs     Vec<u8>: io::Write and hex
+    ├── string.rs    String
+    ├── ascii.rs     AsciiString            (feature `ascii`)
+    ├── deque.rs     VecDeque<T>
+    ├── btree.rs     BTreeSet, BTreeMap
+    ├── hashed.rs    HashSet, HashMap       (feature `std`)
+    └── indexed.rs   IndexSet, IndexMap     (feature `indexmap`)
+tests/
+├── confinement.rs   tests of the public API
+└── guarantee.rs     regression tests: no value can get outside its limits
 ```
+
+The examples in this file are compiled and run by `cargo test --all-features`.
 
 ## Development
 

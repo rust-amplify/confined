@@ -23,7 +23,53 @@ use alloc::collections::{BTreeMap, BTreeSet, btree_map};
 use core::hash::Hash;
 use core::ops::RangeBounds;
 
-use crate::{Confined, Error};
+use crate::{Confined, Entry, Error, ItemLen, ZERO};
+
+impl<T: Ord> ItemLen for BTreeSet<T> {}
+
+impl<K: Ord + Hash, V> ItemLen for BTreeMap<K, V> {}
+
+impl<'a, K: Ord + Hash, V> Entry<'a, BTreeMap<K, V>> {
+    /// Returns a reference to this entry's key.
+    pub fn key(&self) -> &K {
+        self.0.key()
+    }
+
+    /// Ensures a value is in the entry by inserting the default if empty, and
+    /// returns a mutable reference to the value in the entry.
+    pub fn or_insert(self, default: V) -> &'a mut V {
+        self.0.or_insert(default)
+    }
+
+    /// Ensures a value is in the entry by inserting the result of the default
+    /// function if empty, and returns a mutable reference to the value in the
+    /// entry.
+    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
+        self.0.or_insert_with(default)
+    }
+
+    /// Ensures a value is in the entry by inserting, if empty, the result of
+    /// the default function, which gets a reference to the key of the entry.
+    /// Returns a mutable reference to the value in the entry.
+    pub fn or_insert_with_key<F: FnOnce(&K) -> V>(self, default: F) -> &'a mut V {
+        self.0.or_insert_with_key(default)
+    }
+
+    /// Ensures a value is in the entry by inserting the default value if
+    /// empty, and returns a mutable reference to the value in the entry.
+    pub fn or_default(self) -> &'a mut V
+    where
+        V: Default,
+    {
+        self.0.or_default()
+    }
+
+    /// Provides in-place mutable access to an occupied entry before any
+    /// potential inserts into the map.
+    pub fn and_modify<F: FnOnce(&mut V)>(self, f: F) -> Self {
+        Entry(self.0.and_modify(f))
+    }
+}
 
 impl<T: Ord, const MIN_LEN: usize, const MAX_LEN: usize> Confined<BTreeSet<T>, MIN_LEN, MAX_LEN> {
     /// Removes an element from the set. Errors if the index exceeds the number
@@ -107,14 +153,47 @@ impl<K: Ord + Hash, V, const MIN_LEN: usize, const MAX_LEN: usize>
 
     /// Moves all elements from `other` into `self`, leaving `other` empty.
     ///
+    /// If a key from `other` is already present in `self`, the respective
+    /// value from `self` is overwritten with the respective value from
+    /// `other`. Such a key doesn't add to the length of `self`.
+    ///
+    /// The `other` map is left empty, so it must not have a lower bound:
+    ///
+    /// ```
+    /// # use std::collections::BTreeMap;
+    /// # use confined::Confined;
+    /// let mut map = Confined::<BTreeMap<u8, u8>, 1, 3>::with_key_value(1, 10);
+    /// let mut other = Confined::<BTreeMap<u8, u8>, 0, 3>::try_from_iter([(2, 20)]).unwrap();
+    /// map.append(&mut other).unwrap();
+    /// assert_eq!(map.len(), 2);
+    /// ```
+    ///
+    /// ```compile_fail,E0308
+    /// # use std::collections::BTreeMap;
+    /// # use confined::Confined;
+    /// let mut map = Confined::<BTreeMap<u8, u8>, 1, 3>::with_key_value(1, 10);
+    /// let mut other = Confined::<BTreeMap<u8, u8>, 1, 3>::try_from_iter([(2, 20)]).unwrap();
+    /// map.append(&mut other).unwrap();
+    /// assert_eq!(map.len(), 2);
+    /// ```
+    ///
     /// # Errors
     ///
     /// Errors if the maximum confinement is exceeded after the operation.
-    pub fn append<const MIN_LEN2: usize, const MAX_LEN2: usize>(
+    /// Both maps are left unchanged in this case.
+    pub fn append<const MAX_LEN2: usize>(
         &mut self,
-        other: &mut Confined<BTreeMap<K, V>, MIN_LEN2, MAX_LEN2>,
+        other: &mut Confined<BTreeMap<K, V>, ZERO, MAX_LEN2>,
     ) -> Result<(), Error> {
-        let new_len = self.len() + other.len();
+        let mut new_len = self.len().saturating_add(other.len());
+        if new_len > MAX_LEN {
+            // The keys present in both maps do not add to the length
+            new_len -= other
+                .0
+                .keys()
+                .filter(|key| self.0.contains_key(key))
+                .count();
+        }
         if new_len > MAX_LEN {
             return Err(Error::Oversize {
                 len: new_len,

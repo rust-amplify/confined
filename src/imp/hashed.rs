@@ -22,7 +22,53 @@
 use std::collections::{HashMap, HashSet, hash_map};
 use std::hash::Hash;
 
-use crate::{Confined, Error, ZERO};
+use crate::{Confined, Entry, Error, ItemLen, ZERO};
+
+impl<T: Hash + Eq> ItemLen for HashSet<T> {}
+
+impl<K: Hash + Eq, V> ItemLen for HashMap<K, V> {}
+
+impl<'a, K: Hash + Eq, V> Entry<'a, HashMap<K, V>> {
+    /// Returns a reference to this entry's key.
+    pub fn key(&self) -> &K {
+        self.0.key()
+    }
+
+    /// Ensures a value is in the entry by inserting the default if empty, and
+    /// returns a mutable reference to the value in the entry.
+    pub fn or_insert(self, default: V) -> &'a mut V {
+        self.0.or_insert(default)
+    }
+
+    /// Ensures a value is in the entry by inserting the result of the default
+    /// function if empty, and returns a mutable reference to the value in the
+    /// entry.
+    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
+        self.0.or_insert_with(default)
+    }
+
+    /// Ensures a value is in the entry by inserting, if empty, the result of
+    /// the default function, which gets a reference to the key of the entry.
+    /// Returns a mutable reference to the value in the entry.
+    pub fn or_insert_with_key<F: FnOnce(&K) -> V>(self, default: F) -> &'a mut V {
+        self.0.or_insert_with_key(default)
+    }
+
+    /// Ensures a value is in the entry by inserting the default value if
+    /// empty, and returns a mutable reference to the value in the entry.
+    pub fn or_default(self) -> &'a mut V
+    where
+        V: Default,
+    {
+        self.0.or_default()
+    }
+
+    /// Provides in-place mutable access to an occupied entry before any
+    /// potential inserts into the map.
+    pub fn and_modify<F: FnOnce(&mut V)>(self, f: F) -> Self {
+        Entry(self.0.and_modify(f))
+    }
+}
 
 impl<T: Hash + Eq, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<HashSet<T>, MIN_LEN, MAX_LEN>
@@ -85,10 +131,16 @@ impl<K: Hash + Eq, V, const MIN_LEN: usize, const MAX_LEN: usize>
     /// avoid frequent reallocations. After calling `reserve`, capacity will be
     /// greater than or equal to `min(self.len() + additional, MAX_LEN)`. Does
     /// nothing if capacity is already sufficient.
+    ///
+    /// The space is never reserved for more elements than the confinement
+    /// allows to insert.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new allocation size overflows `usize`.
     pub fn reserve(&mut self, additional: usize) {
-        let new_len = self.len() + additional;
-        let reserve = ::core::cmp::min(new_len, MAX_LEN);
-        self.0.reserve(reserve)
+        let room = MAX_LEN.saturating_sub(self.len());
+        self.0.reserve(additional.min(room))
     }
 
     /// Shrinks the capacity of the map as much as possible. It will drop

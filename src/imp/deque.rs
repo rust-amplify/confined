@@ -22,19 +22,125 @@
 use alloc::collections::vec_deque::{self, VecDeque};
 use core::ops::RangeBounds;
 
-use crate::{Confined, Error};
+use crate::{Confined, Error, ItemLen, ZERO};
 
-impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<VecDeque<T>, MIN_LEN, MAX_LEN> {
+impl<T> ItemLen for VecDeque<T> {}
+
+/// Methods which can't report an error, so they exist only for the deques
+/// without a lower bound. A deque with a lower bound is shortened with
+/// `remove`, which checks the bound.
+impl<T, const MAX_LEN: usize> Confined<VecDeque<T>, ZERO, MAX_LEN> {
     /// Removes the first element and returns it, or `None` if the deque is
     /// empty.
+    ///
+    /// ```
+    /// # use std::collections::VecDeque;
+    /// # use confined::Confined;
+    /// let mut deque = Confined::<VecDeque<u8>, 0, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.pop_front(), Some(1));
+    /// ```
+    ///
+    /// A deque with a lower bound has no such method, so the call fails to
+    /// compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use std::collections::VecDeque;
+    /// # use confined::Confined;
+    /// let mut deque = Confined::<VecDeque<u8>, 1, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.pop_front(), Some(1));
+    /// ```
     pub fn pop_front(&mut self) -> Option<T> {
         self.0.pop_front()
     }
 
     /// Removes the last element and returns it, or `None` if the deque is
     /// empty.
+    ///
+    /// ```
+    /// # use std::collections::VecDeque;
+    /// # use confined::Confined;
+    /// let mut deque = Confined::<VecDeque<u8>, 0, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.pop_back(), Some(2));
+    /// ```
+    ///
+    /// A deque with a lower bound has no such method, so the call fails to
+    /// compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use std::collections::VecDeque;
+    /// # use confined::Confined;
+    /// let mut deque = Confined::<VecDeque<u8>, 1, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.pop_back(), Some(2));
+    /// ```
     pub fn pop_back(&mut self) -> Option<T> {
         self.0.pop_back()
+    }
+
+    /// Removes the specified range from the deque in bulk, returning all
+    /// removed elements as an iterator. If the iterator is dropped before
+    /// being fully consumed, it drops the remaining removed elements.
+    ///
+    /// The returned iterator keeps a mutable borrow on the queue to optimize
+    /// its implementation.
+    ///
+    /// ```
+    /// # use std::collections::VecDeque;
+    /// # use confined::Confined;
+    /// let mut deque = Confined::<VecDeque<u8>, 0, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.drain(..).count(), 2);
+    /// ```
+    ///
+    /// A deque with a lower bound has no such method, so the call fails to
+    /// compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use std::collections::VecDeque;
+    /// # use confined::Confined;
+    /// let mut deque = Confined::<VecDeque<u8>, 1, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.drain(..).count(), 2);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the starting point is greater than the end point or if
+    /// the end point is greater than the length of the deque.
+    ///
+    /// # Leaking
+    ///
+    /// If the returned iterator goes out of scope without being dropped (due to
+    /// [`mem::forget`](core::mem::forget), for example), the deque may have
+    /// lost and leaked elements arbitrarily, including elements outside the
+    /// range.
+    pub fn drain<R: RangeBounds<usize>>(&mut self, range: R) -> vec_deque::Drain<'_, T> {
+        self.0.drain(range)
+    }
+
+    /// Shortens the deque, keeping the first `len` elements and dropping
+    /// the rest.
+    ///
+    /// If `len` is greater or equal to the deque's current length, this has
+    /// no effect.
+    ///
+    /// ```
+    /// # use std::collections::VecDeque;
+    /// # use confined::Confined;
+    /// let mut deque = Confined::<VecDeque<u8>, 0, 3>::try_from_iter([1, 2]).unwrap();
+    /// deque.truncate(1);
+    /// assert_eq!(deque.len(), 1);
+    /// ```
+    ///
+    /// A deque with a lower bound has no such method, so the call fails to
+    /// compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use std::collections::VecDeque;
+    /// # use confined::Confined;
+    /// let mut deque = Confined::<VecDeque<u8>, 1, 3>::try_from_iter([1, 2]).unwrap();
+    /// deque.truncate(1);
+    /// assert_eq!(deque.len(), 1);
+    /// ```
+    pub fn truncate(&mut self, len: usize) {
+        self.0.truncate(len)
     }
 }
 
@@ -45,11 +151,6 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<VecDeque<T>, MIN_LE
         self.check_oversize()?;
         self.0.push_front(elem);
         Ok(())
-    }
-
-    #[deprecated(since = "4.7.1", note = "use `push_front`")]
-    pub fn push_from(&mut self, elem: T) -> Result<(), Error> {
-        self.push_front(elem)
     }
 
     /// Appends an element to the deque. Errors if the new collection length
@@ -68,35 +169,5 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<VecDeque<T>, MIN_LE
         self.check_boundary(index)?;
         self.check_undersize()?;
         Ok(self.0.remove(index).expect("element within the length"))
-    }
-
-    /// Removes the specified range from the deque in bulk, returning all
-    /// removed elements as an iterator. If the iterator is dropped before
-    /// being fully consumed, it drops the remaining removed elements.
-    ///
-    /// The returned iterator keeps a mutable borrow on the queue to optimize
-    /// its implementation.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the starting point is greater than the end point or if
-    /// the end point is greater than the length of the deque.
-    ///
-    /// # Leaking
-    ///
-    /// If the returned iterator goes out of scope without being dropped (due to
-    /// [`mem::forget`], for example), the deque may have lost and leaked
-    /// elements arbitrarily, including elements outside the range.
-    pub fn drain<R: RangeBounds<usize>>(&mut self, range: R) -> vec_deque::Drain<'_, T> {
-        self.0.drain(range)
-    }
-
-    /// Shortens the deque, keeping the first `len` elements and dropping
-    /// the rest.
-    ///
-    /// If `len` is greater or equal to the deque's current length, this has
-    /// no effect.
-    pub fn truncate(&mut self, len: usize) {
-        self.0.truncate(len)
     }
 }

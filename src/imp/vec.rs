@@ -21,9 +21,37 @@
 
 use alloc::vec::Vec;
 
-use crate::{Confined, Error, ZERO};
+use crate::base::FitsLen;
+use crate::{Confined, Error, ItemLen, ZERO};
+
+impl<T> ItemLen for Vec<T> {}
 
 impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MAX_LEN> {
+    /// Constructs confinement out of an array of items. Does allocation.
+    ///
+    /// The length of an array is a part of its type, so it is checked against
+    /// the confinement bounds when the program is built, and the function
+    /// can't fail when the program runs. An array which length is outside of
+    /// the bounds fails to build. The failure is reported by `cargo build` and
+    /// `cargo test`, but not by `cargo check`.
+    ///
+    /// ```
+    /// # use confined::Confined;
+    /// let vec = Confined::<Vec<u8>, 1, 3>::from_array([1, 2, 3]);
+    /// assert_eq!(vec.len(), 3);
+    /// ```
+    ///
+    /// ```compile_fail,E0080
+    /// # use confined::Confined;
+    /// let vec = Confined::<Vec<u8>, 1, 2>::from_array([1, 2, 3]);
+    /// assert_eq!(vec.len(), 3);
+    /// ```
+    #[inline]
+    pub fn from_array<const N: usize>(items: [T; N]) -> Self {
+        let () = FitsLen::<MIN_LEN, MAX_LEN, N>::VALID;
+        Self(Vec::from(items))
+    }
+
     /// Constructs confinement out of slice of items. Does allocation.
     ///
     /// # Panics
@@ -35,17 +63,7 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MA
     where
         T: Clone,
     {
-        assert!(slice.len() > MIN_LEN && slice.len() <= MAX_LEN);
-        Self(slice.to_vec())
-    }
-
-    #[deprecated(since = "4.7.0", note = "use `from_slice_checked`")]
-    #[inline]
-    pub fn from_slice_unsafe(slice: &[T]) -> Self
-    where
-        T: Clone,
-    {
-        Self::from_slice_checked(slice)
+        Self::try_from_slice(slice).expect("slice size mismatch, use try_from_slice instead")
     }
 
     /// Constructs confinement out of slice of items. Does allocation.

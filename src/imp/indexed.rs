@@ -23,7 +23,53 @@ use core::hash::Hash;
 
 use indexmap::{IndexMap, IndexSet, map};
 
-use crate::{Confined, Error};
+use crate::{Confined, Entry, Error, ItemLen};
+
+impl<T: Eq + Hash> ItemLen for IndexSet<T> {}
+
+impl<K: Eq + Hash, V> ItemLen for IndexMap<K, V> {}
+
+impl<'a, K: Eq + Hash, V> Entry<'a, IndexMap<K, V>> {
+    /// Returns a reference to this entry's key.
+    pub fn key(&self) -> &K {
+        self.0.key()
+    }
+
+    /// Ensures a value is in the entry by inserting the default if empty, and
+    /// returns a mutable reference to the value in the entry.
+    pub fn or_insert(self, default: V) -> &'a mut V {
+        self.0.or_insert(default)
+    }
+
+    /// Ensures a value is in the entry by inserting the result of the default
+    /// function if empty, and returns a mutable reference to the value in the
+    /// entry.
+    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
+        self.0.or_insert_with(default)
+    }
+
+    /// Ensures a value is in the entry by inserting, if empty, the result of
+    /// the default function, which gets a reference to the key of the entry.
+    /// Returns a mutable reference to the value in the entry.
+    pub fn or_insert_with_key<F: FnOnce(&K) -> V>(self, default: F) -> &'a mut V {
+        self.0.or_insert_with_key(default)
+    }
+
+    /// Ensures a value is in the entry by inserting the default value if
+    /// empty, and returns a mutable reference to the value in the entry.
+    pub fn or_default(self) -> &'a mut V
+    where
+        V: Default,
+    {
+        self.0.or_default()
+    }
+
+    /// Provides in-place mutable access to an occupied entry before any
+    /// potential inserts into the map.
+    pub fn and_modify<F: FnOnce(&mut V)>(self, f: F) -> Self {
+        Entry(self.0.and_modify(f))
+    }
+}
 
 impl<T: Eq + Hash, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<IndexSet<T>, MIN_LEN, MAX_LEN>

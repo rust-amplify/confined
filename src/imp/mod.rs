@@ -30,3 +30,6 @@ mod hashed;
 mod ascii;
 #[cfg(feature = "indexmap")]
 mod indexed;
+
+#[cfg(feature = "ascii")]
+pub use self::ascii::AsciiError;

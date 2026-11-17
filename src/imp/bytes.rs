@@ -67,12 +67,31 @@ mod hex {
         }
     }
 
+    /// The number of bytes must fit the confinement. Otherwise the result is
+    /// [`hex::Error::InvalidLength`] with the violated bound and the number of
+    /// bytes in the data.
     impl<const MIN_LEN: usize, const MAX_LEN: usize> FromHex for Confined<Vec<u8>, MIN_LEN, MAX_LEN> {
         fn from_byte_iter<I>(iter: I) -> Result<Self, hex::Error>
         where
             I: Iterator<Item = Result<u8, hex::Error>> + ExactSizeIterator + DoubleEndedIterator,
         {
-            Vec::<u8>::from_byte_iter(iter).map(Self)
+            // The length is checked before decoding, so the data which do not
+            // fit are not allocated, and after it, since an iterator may
+            // report a wrong length.
+            check_len::<MIN_LEN, MAX_LEN>(iter.len())?;
+            let bytes = Vec::<u8>::from_byte_iter(iter)?;
+            check_len::<MIN_LEN, MAX_LEN>(bytes.len())?;
+            Ok(Self(bytes))
         }
+    }
+
+    fn check_len<const MIN_LEN: usize, const MAX_LEN: usize>(len: usize) -> Result<(), hex::Error> {
+        if len < MIN_LEN {
+            return Err(hex::Error::InvalidLength(MIN_LEN, len));
+        }
+        if len > MAX_LEN {
+            return Err(hex::Error::InvalidLength(MAX_LEN, len));
+        }
+        Ok(())
     }
 }

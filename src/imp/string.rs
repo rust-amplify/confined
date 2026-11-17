@@ -19,9 +19,21 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+use alloc::borrow::ToOwned;
 use alloc::string::String;
+use core::str::FromStr;
 
-use crate::{Confined, Error, ZERO};
+use crate::{Confined, Error, ItemLen, ZERO};
+
+/// The length of a string is measured in bytes, and a `char` takes from one to
+/// four bytes in the UTF-8 encoding.
+impl ItemLen for String {
+    const MAX_ITEM_LEN: usize = 4;
+
+    fn item_len(item: &char) -> usize {
+        item.len_utf8()
+    }
+}
 
 impl<const MIN_LEN: usize, const MAX_LEN: usize> TryFrom<&str>
     for Confined<String, MIN_LEN, MAX_LEN>
@@ -30,6 +42,14 @@ impl<const MIN_LEN: usize, const MAX_LEN: usize> TryFrom<&str>
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::try_from(value.to_owned())
+    }
+}
+
+impl<const MIN_LEN: usize, const MAX_LEN: usize> FromStr for Confined<String, MIN_LEN, MAX_LEN> {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as TryFrom<&str>>::try_from(s)
     }
 }
 
@@ -45,15 +65,22 @@ impl<const MIN_LEN: usize, const MAX_LEN: usize> Confined<String, MIN_LEN, MAX_L
     /// Removes a single character from the confined string, unless the string
     /// doesn't shorten more than the confinement requirement. Errors
     /// otherwise.
+    ///
+    /// The `index` is a position in bytes, and it must point to the first
+    /// byte of a character. The string is shortened by the number of bytes in
+    /// the UTF-8 encoding of the removed character, which may be up to four.
     pub fn remove(&mut self, index: usize) -> Result<char, Error> {
         self.check_boundary(index)?;
-        if !self.0.is_char_boundary(index) {
-            return Err(Error::OutOfBoundary {
-                index,
-                len: self.len(),
+        let len = self.len();
+        let Some(ch) = self.0.get(index..).and_then(|tail| tail.chars().next()) else {
+            return Err(Error::OutOfBoundary { index, len });
+        };
+        if len - ch.len_utf8() < MIN_LEN {
+            return Err(Error::Undersize {
+                len,
+                min_len: MIN_LEN,
             });
         }
-        self.check_undersize()?;
         Ok(self.0.remove(index))
     }
 }
