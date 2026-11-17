@@ -83,16 +83,21 @@ pub const ZERO: usize = 0;
 /// Constant for a minimal size of a confined collection.
 pub const ONE: usize = 1;
 /// Constant for a maximal size of a confined collection equal to [`u8::MAX`].
-pub const U8: usize = u8::MAX as usize;
+pub const U8MAX: usize = u8::MAX as usize;
 /// Constant for a maximal size of a confined collection equal to [`u16::MAX`].
-pub const U16: usize = u16::MAX as usize;
-/// Constant for a maximal size of a confined collection equal to
-/// [`u24::MAX`](amplify_num::u24::MAX).
-pub const U24: usize = 0xFFFFFFusize;
+pub const U16MAX: usize = u16::MAX as usize;
+/// Constant for a maximal size of a confined collection equal to [`u24::MAX`](amplify_num::u24::MAX).
+pub const U24MAX: usize = amplify_num::u24::MAX.into_usize();
 /// Constant for a maximal size of a confined collection equal to [`u32::MAX`].
-pub const U32: usize = u32::MAX as usize;
+pub const U32MAX: usize = u32::MAX as usize;
+/// Constant for a maximal size of a confined collection equal to [`u40::MAX`](amplify_num::u40::MAX).
+pub const U40MAX: usize = amplify_num::u40::MAX.into_usize();
+/// Constant for a maximal size of a confined collection equal to [`u48::MAX`](amplify_num::u48::MAX).
+pub const U48MAX: usize = amplify_num::u48::MAX.into_usize();
+/// Constant for a maximal size of a confined collection equal to [`u56::MAX`](amplify_num::u56::MAX).
+pub const U56MAX: usize = amplify_num::u56::MAX.into_usize();
 /// Constant for a maximal size of a confined collection equal to [`u64::MAX`].
-pub const U64: usize = u64::MAX as usize;
+pub const U64MAX: usize = u64::MAX as usize;
 
 /// Runs the examples from `README.md` as documentation tests. The examples
 /// need all features of the crate.

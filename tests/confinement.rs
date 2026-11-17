@@ -195,7 +195,7 @@ fn cant_go_below_min() {
     let mut s = TinyOrdMap::<u8, u8>::new();
     assert!(matches!(s.remove(&0), Ok(None)));
 
-    let mut s = NonEmptyString::<U8>::with('a');
+    let mut s = NonEmptyString::<U8MAX>::with('a');
     assert!(matches!(
         s.remove(0),
         Err(Error::Undersize { len: 1, min_len: 1 })
@@ -331,14 +331,14 @@ fn iter_mut_indexmap() {
 
 #[test]
 fn first_last_non_empty_vec() {
-    let coll = NonEmptyVec::<u8, U8>::try_from(vec![1, 2, 3]).unwrap();
+    let coll = NonEmptyVec::<u8, U8MAX>::try_from(vec![1, 2, 3]).unwrap();
     assert_eq!(*coll.first(), 1);
     assert_eq!(*coll.last(), 3);
 }
 
 #[test]
 fn first_last_non_empty_deque() {
-    let coll = NonEmptyDeque::<u8, U8>::try_from_iter([1, 2, 3]).unwrap();
+    let coll = NonEmptyDeque::<u8, U8MAX>::try_from_iter([1, 2, 3]).unwrap();
     assert_eq!(*coll.first(), 1);
     assert_eq!(*coll.last(), 3);
 }

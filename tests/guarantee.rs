@@ -31,7 +31,7 @@ use std::panic::{self, AssertUnwindSafe};
 
 #[cfg(feature = "indexmap")]
 use confined::indexmap::IndexMap;
-use confined::{Confined, Error, ItemLen, U8, U16, U24, U32};
+use confined::{Confined, Error, ItemLen, U8MAX, U16MAX, U24MAX, U32MAX};
 
 #[test]
 fn from_str_checks_limits() {
@@ -489,19 +489,19 @@ fn len_integer_methods_accept_any_safe_maximum() {
     assert_eq!(short.len_u24(), amplify_num::u24::try_from(2u32).unwrap());
     assert_eq!(short.len_u32(), 2);
 
-    let u8_boundary = Confined::<Vec<u8>, 0, U8>::try_from(vec![0; U8]).unwrap();
+    let u8_boundary = Confined::<Vec<u8>, 0, U8MAX>::try_from(vec![0; U8MAX]).unwrap();
     assert_eq!(u8_boundary.len_u8(), u8::MAX);
 
-    let u16_boundary = Confined::<Vec<u8>, 0, U16>::try_from(vec![0; U16]).unwrap();
+    let u16_boundary = Confined::<Vec<u8>, 0, U16MAX>::try_from(vec![0; U16MAX]).unwrap();
     assert_eq!(u16_boundary.len_u16(), u16::MAX);
 
-    let u24_bounded = Confined::<Vec<u8>, 0, U24>::try_from(vec![1, 2]).unwrap();
+    let u24_bounded = Confined::<Vec<u8>, 0, U24MAX>::try_from(vec![1, 2]).unwrap();
     assert_eq!(
         u24_bounded.len_u24(),
         amplify_num::u24::try_from(2u32).unwrap()
     );
 
-    let u32_bounded = Confined::<Vec<u8>, 0, U32>::try_from(vec![1, 2]).unwrap();
+    let u32_bounded = Confined::<Vec<u8>, 0, U32MAX>::try_from(vec![1, 2]).unwrap();
     assert_eq!(u32_bounded.len_u32(), 2);
 }
 

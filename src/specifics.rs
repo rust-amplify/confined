@@ -24,7 +24,7 @@ use core::ops::{Index, IndexMut};
 use amplify_num::u24;
 use collections::{Collection, KeyedCollection};
 
-use super::{Confined, ItemLen, U8, U16, U24, U32, ZERO};
+use super::{Confined, ItemLen, U8MAX, U16MAX, U24MAX, U32MAX, ZERO};
 use crate::base::{FitsLen, HoldsItem, LenWithin, NeverEmpty};
 
 impl<C: Collection, const MAX_LEN: usize> Confined<C, ZERO, MAX_LEN> {
@@ -245,7 +245,7 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
     /// let _ = values.len_u8();
     /// ```
     pub fn len_u8(&self) -> u8 {
-        let () = LenWithin::<MAX_LEN, U8>::VALID;
+        let () = LenWithin::<MAX_LEN, U8MAX>::VALID;
         self.len() as u8
     }
 
@@ -265,7 +265,7 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
     /// assert_eq!(values.len_u16(), 2);
     /// ```
     pub fn len_u16(&self) -> u16 {
-        let () = LenWithin::<MAX_LEN, U16>::VALID;
+        let () = LenWithin::<MAX_LEN, U16MAX>::VALID;
         self.len() as u16
     }
 
@@ -286,7 +286,7 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
     /// assert_eq!(values.len_u24(), u24::try_from(2u32).unwrap());
     /// ```
     pub fn len_u24(&self) -> u24 {
-        let () = LenWithin::<MAX_LEN, U24>::VALID;
+        let () = LenWithin::<MAX_LEN, U24MAX>::VALID;
         u24::try_from(self.len() as u32).expect("confinement broken")
     }
 
@@ -306,7 +306,7 @@ impl<C: Collection, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_
     /// assert_eq!(values.len_u32(), 2);
     /// ```
     pub fn len_u32(&self) -> u32 {
-        let () = LenWithin::<MAX_LEN, U32>::VALID;
+        let () = LenWithin::<MAX_LEN, U32MAX>::VALID;
         self.len() as u32
     }
 }
