@@ -31,7 +31,7 @@ use std::panic::{self, AssertUnwindSafe};
 
 #[cfg(feature = "indexmap")]
 use confined::indexmap::IndexMap;
-use confined::{Confined, Error, ItemLen};
+use confined::{Confined, Error, ItemLen, U8, U16, U24, U32};
 
 #[test]
 fn from_str_checks_limits() {
@@ -232,6 +232,16 @@ fn with_holds_a_single_item() {
 }
 
 #[test]
+fn single_item_constructors_allow_zero_minimum() {
+    assert_eq!(Confined::<Vec<u8>, 0, 1>::with(7).as_slice(), &[7]);
+    assert_eq!(Confined::<String, 0, 4>::with(char::MAX).len(), 4);
+    assert_eq!(
+        Confined::<BTreeMap<u8, u8>, 0, 1>::with_key_value(7, 8).len(),
+        1
+    );
+}
+
+#[test]
 fn deque_without_minimum_keeps_infallible_methods() {
     let mut deque = Confined::<VecDeque<u8>, 0, 5>::try_from_iter([1, 2, 3, 4, 5]).unwrap();
     assert_eq!(deque.pop_front(), Some(1));
@@ -414,14 +424,14 @@ fn hash_map_reserve_is_limited_by_the_confinement() {
 
 #[test]
 fn first_mut_and_last_mut() {
-    let mut vec = Confined::<Vec<u8>, 1, 3>::from_array([1, 2, 3]);
+    let mut vec = Confined::<Vec<u8>, 2, 3>::from_array([1, 2, 3]);
     *vec.first_mut() = 10;
     *vec.last_mut() = 30;
     assert_eq!(*vec.first(), 10);
     assert_eq!(*vec.last(), 30);
     assert_eq!(vec.as_slice(), &[10, 2, 30]);
 
-    let mut deque = Confined::<VecDeque<u8>, 1, 3>::try_from_iter([1, 2, 3]).unwrap();
+    let mut deque = Confined::<VecDeque<u8>, 2, 3>::try_from_iter([1, 2, 3]).unwrap();
     *deque.first_mut() = 10;
     *deque.last_mut() = 30;
     assert_eq!(*deque.first(), 10);
@@ -439,7 +449,7 @@ fn first_mut_and_last_mut() {
 fn ascii_first_and_last() {
     use confined::ascii::{AsciiChar, AsciiString};
 
-    let mut s: Confined<AsciiString, 1, 8> = "abc".parse().unwrap();
+    let mut s: Confined<AsciiString, 2, 8> = "abc".parse().unwrap();
     assert_eq!(*s.first(), AsciiChar::a);
     assert_eq!(*s.last(), AsciiChar::c);
     *s.first_mut() = AsciiChar::x;
@@ -452,9 +462,59 @@ fn ascii_first_and_last() {
 fn index_set_first_and_last() {
     use confined::indexmap::IndexSet;
 
-    let set = Confined::<IndexSet<u8>, 1, 8>::try_from_iter([3, 1, 2]).unwrap();
+    let set = Confined::<IndexSet<u8>, 2, 8>::try_from_iter([3, 1, 2]).unwrap();
     assert_eq!(*set.first(), 3);
     assert_eq!(*set.last(), 2);
+}
+
+#[test]
+fn empty_vec_keeps_optional_first_and_last_access() {
+    let values = Confined::<Vec<u8>, 0, 4>::new();
+    assert_eq!(values.as_slice().first(), None);
+    assert_eq!(values.as_unconfined().last(), None);
+}
+
+#[test]
+fn btree_set_keeps_its_optional_first_and_last_access() {
+    let values = Confined::<BTreeSet<u8>, 0, 4>::try_from_iter([3, 1, 2]).unwrap();
+    assert_eq!(values.first(), Some(&1));
+    assert_eq!(values.last(), Some(&3));
+}
+
+#[test]
+fn len_integer_methods_accept_any_safe_maximum() {
+    let short = Confined::<Vec<u8>, 0, 10>::try_from(vec![1, 2]).unwrap();
+    assert_eq!(short.len_u8(), 2);
+    assert_eq!(short.len_u16(), 2);
+    assert_eq!(short.len_u24(), amplify_num::u24::try_from(2u32).unwrap());
+    assert_eq!(short.len_u32(), 2);
+
+    let u8_boundary = Confined::<Vec<u8>, 0, U8>::try_from(vec![0; U8]).unwrap();
+    assert_eq!(u8_boundary.len_u8(), u8::MAX);
+
+    let u16_boundary = Confined::<Vec<u8>, 0, U16>::try_from(vec![0; U16]).unwrap();
+    assert_eq!(u16_boundary.len_u16(), u16::MAX);
+
+    let u24_bounded = Confined::<Vec<u8>, 0, U24>::try_from(vec![1, 2]).unwrap();
+    assert_eq!(
+        u24_bounded.len_u24(),
+        amplify_num::u24::try_from(2u32).unwrap()
+    );
+
+    let u32_bounded = Confined::<Vec<u8>, 0, U32>::try_from(vec![1, 2]).unwrap();
+    assert_eq!(u32_bounded.len_u32(), 2);
+}
+
+#[test]
+#[cfg(feature = "std")]
+fn io_write_accepts_nonzero_minimum() {
+    use std::io::Write;
+
+    let mut bytes = Confined::<Vec<u8>, 2, 5>::try_from(vec![1, 2]).unwrap();
+    bytes.write_all(&[3, 4]).unwrap();
+    assert_eq!(bytes.as_slice(), &[1, 2, 3, 4]);
+    assert!(bytes.write_all(&[5, 6]).is_err());
+    assert_eq!(bytes.as_slice(), &[1, 2, 3, 4]);
 }
 
 #[test]

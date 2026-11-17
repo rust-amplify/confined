@@ -98,35 +98,41 @@ The compiler contributes three things.
    available, while its own `push`, `insert`, `remove` and similar methods are
    not. Only the checked replacements defined on `Confined` can change the
    size.
-2. **Methods exist only for the limits that make them valid.** Calling one on
-   a type with other limits is a compile error. The first table below lists
-   them.
+2. **Methods are available across broader ranges of limits.** When a method
+   requires a particular bound, a const assertion checks it when the program
+   is built. The first table below lists the conditions.
 3. **Sizes known at build time are checked at build time.** Where every size
    involved is a constant, a wrong combination stops the build instead of
    returning an error at run time. The second table lists these checks.
 
-| Available only when | Items                                                                                                                                                |
-|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `MIN_LEN` is `0`    | `new()`, `with_capacity()`, `Default`, `clear()`; `pop()` on `Vec`, `String` and `AsciiString`; `pop_front()`, `pop_back()`, `truncate()` and `drain()` on `VecDeque`; `retain()` on maps; `drain()` on `HashMap`; `io::Write` on `Vec<u8>` |
-| `MIN_LEN` is `1`    | `with(item)`; `with_key_value(k, v)` on maps; `first()` and `last()` returning `&T` instead of `Option<&T>` on `Vec`, `VecDeque`, `AsciiString` and `IndexSet`; `first_mut()` and `last_mut()` returning `&mut T` on `Vec`, `VecDeque` and `AsciiString` |
-| `MAX_LEN` is `U8`   | `len_u8() -> u8`                                                                                                                                     |
-| `MAX_LEN` is `U16`  | `len_u16() -> u16`                                                                                                                                   |
-| `MAX_LEN` is `U24`  | `len_u24() -> amplify_num::u24`                                                                                                                      |
-| `MAX_LEN` is `U32`  | `len_u32() -> u32`                                                                                                                                   |
+| Condition | Methods |
+|---|---|
+| `MIN_LEN` is `0` | `new()`, `with_capacity()`, `Default`, `clear()`; `pop()` on `Vec`, `String` and `AsciiString`; `pop_front()`, `pop_back()`, `truncate()` and `drain()` on `VecDeque`; `retain()` on maps; `drain()` on `HashMap` |
+| `MIN_LEN > 0` | `first()` and `last()` on indexable collections (`Vec`, `VecDeque`, `AsciiString`, `IndexSet`); `first_mut()` and `last_mut()` where the collection also supports mutable indexing (`Vec`, `VecDeque`, `AsciiString`) |
+| `MIN_LEN <= 1 <= MAX_LEN` | `with(item)`; `with_key_value(k, v)` on maps |
+| `MAX_LEN <= U8` | `len_u8() -> u8` |
+| `MAX_LEN <= U16` | `len_u16() -> u16` |
+| `MAX_LEN <= U24` | `len_u24() -> amplify_num::u24` |
+| `MAX_LEN <= U32` | `len_u32() -> u32` |
 
-The match is exact: a type with `MIN_LEN = 2` is never empty either, but it
-does not get `first()` and `last()`.
+These are range checks, not exact matches: for example, `MIN_LEN = 2` is
+enough for `first()` and `last()`, and `len_u8()` works for any maximum no
+greater than `u8::MAX`. The methods are available on the broader type range,
+and the build-time assertions reject bounds that would make their result
+unsafe.
 
 | Function                                    | The build fails unless                            |
 |---------------------------------------------|---------------------------------------------------|
 | `from_array([T; N])` on `Vec`               | `MIN_LEN <= N` and `N <= MAX_LEN`                 |
 | `widen::<MIN2, MAX2>()`                     | `MIN2 <= MIN_LEN` and `MAX_LEN <= MAX2`           |
-| `with(item)`                                | `MAX_LEN >= 1`, or `MAX_LEN >= 4` for a `String`  |
-| `with_key_value(k, v)`                      | `MAX_LEN >= 1`                                    |
+| `with(item)`                                | `MIN_LEN <= 1 <= MAX_LEN` and `MAX_LEN >= MAX_ITEM_LEN` |
+| `with_key_value(k, v)`                      | `MIN_LEN <= 1 <= MAX_LEN`                         |
+| `first()`, `last()`, `first_mut()`, `last_mut()` | `MIN_LEN > 0`                                 |
+| `len_u8()`, `len_u16()`, `len_u24()`, `len_u32()` | `MAX_LEN` does not exceed the return type's maximum |
 | `try_from` and the constructors built on it | `MIN_LEN <= MAX_LEN`                              |
 
 For example, `Confined::<Vec<u8>, 1, 0>::with(7)` stops the build with the
-message "the lower bound of the confinement exceeds its upper bound". These
+message "the number of items is outside of the confinement bounds". These
 checks run when machine code is generated: `cargo build` and `cargo test`
 report them, but `cargo check` does not.
 
@@ -303,8 +309,9 @@ The crate exports constants for the common limits:
 | `U32`    | `u32::MAX`                                                  |
 | `U64`    | `u64::MAX as usize`, which is `usize::MAX` on 64-bit targets |
 
-They are what the `len_u8()` family of methods is keyed on, and what the
-ready-made aliases are built from. The name of an alias is a size prefix
+The `len_u8()` family accepts any maximum no greater than the corresponding
+constant; the ready-made aliases use these constants as their exact maxima.
+The name of an alias is a size prefix
 followed by a collection suffix, for example `TinyVec<T>` or
 `NonEmptyOrdMap<K, V>`:
 
@@ -477,7 +484,7 @@ implements it for the types below. Map types also implement `KeyedCollection`.
 | Collection       | Feature          | Checked methods specific to it                                                                                                |
 |------------------|------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | `Vec<T>`         |                  | `from_array`, `try_from_slice`, `from_slice_checked`, `as_slice`, `into_vec`, `iter`, `remove`, `pop`¹                          |
-| `Vec<u8>`        | `std`, `hex`     | `std::io::Write`¹ (`std`); `LowerHex`, `UpperHex`, `FromHex` (`hex`)                                                            |
+| `Vec<u8>`        | `std`, `hex`     | `std::io::Write` (`std`); `LowerHex`, `UpperHex`, `FromHex` (`hex`)                                                            |
 | `String`         |                  | `TryFrom<&str>`, `FromStr`, `remove`, `pop`¹                                                                                  |
 | `AsciiString`    | `ascii`          | `TryFrom<&str>`, `FromStr`, `remove`, `pop`¹                                                                                  |
 | `VecDeque<T>`    |                  | `push_front`, `push_back`, `remove`, `pop_front`¹, `pop_back`¹, `drain`¹, `truncate`¹                                          |
@@ -488,7 +495,8 @@ implements it for the types below. Map types also implement `KeyedCollection`.
 | `HashMap<K, V>`  | `std`            | `remove`, `remove_entry`, `reserve`, `shrink_to_fit`, `shrink_to`, `into_keys`, `into_values`, `drain`¹                        |
 | `IndexMap<K, V>` | `indexmap`       | `remove`, `into_keys`, `into_values`                                                                                          |
 
-¹ Only when `MIN_LEN` is `0`.
+¹ Only when `MIN_LEN` is `0`. `std::io::Write` is available for any `MIN_LEN`,
+because writing only appends bytes.
 
 `BTreeMap` keys must implement `Hash` in addition to `Ord`, because
 `KeyedCollection` requires it.
@@ -529,6 +537,14 @@ On top of that, every confined collection gets the generic API:
   sets return `Ok(None)` or `Ok(false)`, even at the minimum size.
 - **`String::remove` needs a character boundary.** An index inside a multi-byte
   character returns `OutOfBoundary` instead of panicking.
+- **Non-empty accessors follow the lower bound.** `first()`, `last()`,
+  `first_mut()` and `last_mut()` require `MIN_LEN > 0`, checked at build time.
+  On indexable wrapped collections, `first()` and `last()` shadow the inner
+  `Option`-returning methods even when `MIN_LEN = 0`; use `as_slice().first()` /
+  `as_slice().last()` for a `Vec`, or `as_unconfined()` for the wrapped
+  collection's optional result.
+  `BTreeSet`'s own `first()` and `last()` are unaffected because it is not
+  indexable by position.
 - **`IndexMap` and `IndexSet` removal preserves order.** It uses the `shift_*`
   operations.
 - **`try_retain` stops at the minimum.** It removes rejected entries in
@@ -568,7 +584,7 @@ On top of that, every confined collection gets the generic API:
 src/
 ├── lib.rs           crate root: public re-exports and the size constants
 ├── base.rs          the `Confined` type and everything generic over the collection
-├── specifics.rs     methods that exist only for particular limits (MIN 0, MIN 1, MAX U8...)
+├── specifics.rs     methods with bound-dependent build-time checks and constructors
 ├── error.rs         the `Error` enum
 ├── aliases.rs       type aliases: TinyVec, SmallString, NonEmptyOrdMap...
 ├── macros.rs        constructor macros: tiny_vec!, small_s!, tiny_bmap!...

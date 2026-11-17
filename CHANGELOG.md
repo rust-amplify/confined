@@ -18,11 +18,12 @@ fixes change the public API.
 | The blanket `FromStr` implementation is replaced with implementations for `String` and `AsciiString`. `FromStr::Err` is `Error` for `String` (it was `Infallible`) and `AsciiError` for `AsciiString` (it was `AsAsciiStrError`). | Handle the error. |
 | `"...".parse()`, `FromHex` and `Deserialize` reject the data which do not fit the limits. `FromHex` reports `hex::Error::InvalidLength` with the violated limit and the number of bytes. | None. The data which were accepted in violation of the limits are an error now. |
 | `push`, `extend` and `with` require `C: ItemLen`. | Add the bound to generic code. Add `impl ItemLen for MyCollection {}` to a collection of your own. |
-| `with()` fails to build if `MAX_LEN < 1`, or `MAX_LEN < 4` for `String`. `with_key_value()` fails to build if `MAX_LEN < 1`. | For a `String` with a smaller limit use `"a".parse()` or `try_from`. |
+| `with()` and `with_key_value()` fail to build unless `MIN_LEN <= 1 <= MAX_LEN`. `with()` also requires `MAX_LEN >= MAX_ITEM_LEN` (4 for `String`). | Construct a value with a valid length using `try_from` or `parse`. |
 | `try_from` and the constructors built on it fail to build for a type with `MIN_LEN > MAX_LEN`. | Fix the limits. Such a type could never hold a value. |
 | `BTreeMap::append` takes a source map with `MIN_LEN = 0` and has one const parameter instead of two. | Release a source which has a lower bound, and confine it again with `MIN_LEN = 0`. |
 | The deprecated methods are removed. | `from_collection_unsafe` → `from_checked`, `from_iter_unsafe` → `from_iter_checked`, `from_slice_unsafe` → `from_slice_checked`, `as_inner` → `as_unconfined`, `to_inner` → `to_unconfined`, `into_inner` and `unbox` → `release`, `push_from` → `push_front`. |
 | The `indexmap` feature enables `std`. | None. The feature did not build without `std`. |
+| `first()` and `last()` on indexable collections, and `first_mut()` and `last_mut()` where mutable indexing is supported, now resolve to the confined accessors for all `MIN_LEN` values; calling them requires `MIN_LEN > 0` at build time. | For an optional result, use `as_slice().first()` / `as_slice().last()` or call the wrapped collection through `as_unconfined()`. Mutable optional accessors are available through `as_mut()` when the collection implements `AsMut`. |
 
 The build failures listed above are reported by `cargo build` and `cargo test`,
 but not by `cargo check`.
@@ -90,6 +91,15 @@ but not by `cargo check`.
 
 ### Changed
 
+- `with()` and `with_key_value()` are available for any bounds that can hold
+  exactly one item. `with()` also checks the maximum item size for the
+  collection.
+- `first()`, `last()`, `first_mut()` and `last_mut()` are available for any
+  positive `MIN_LEN`, rather than only `MIN_LEN = 1`.
+- `len_u8()`, `len_u16()`, `len_u24()` and `len_u32()` are available whenever
+  `MAX_LEN` does not exceed the maximum representable by their return type.
+- `std::io::Write` for confined `Vec<u8>` is available for every `MIN_LEN`;
+  writes append and preserve the lower bound.
 - `try_retain` never takes the map below `MIN_LEN`: it stops removing at the
   lower bound, keeps the remaining rejected elements and returns `Undersize`.
 - `try_from_iter` and `from_iter_checked` stop reading the iterator as soon as

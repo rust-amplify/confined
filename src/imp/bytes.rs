@@ -23,9 +23,9 @@
 mod io {
     use std::io;
 
-    use crate::{Confined, ZERO};
+    use crate::Confined;
 
-    impl<const MAX_LEN: usize> io::Write for Confined<Vec<u8>, ZERO, MAX_LEN> {
+    impl<const MIN_LEN: usize, const MAX_LEN: usize> io::Write for Confined<Vec<u8>, MIN_LEN, MAX_LEN> {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             if buf.is_empty() {
                 return Ok(0);

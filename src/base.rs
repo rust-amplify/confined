@@ -164,6 +164,23 @@ impl<const MIN_LEN: usize, const MAX_LEN: usize, const LEN: usize> FitsLen<MIN_L
     );
 }
 
+/// Build-time check that a confinement cannot be empty.
+pub(crate) struct NeverEmpty<const MIN_LEN: usize>;
+
+impl<const MIN_LEN: usize> NeverEmpty<MIN_LEN> {
+    pub(crate) const VALID: () = assert!(MIN_LEN > 0, "the confinement may be empty");
+}
+
+/// Build-time check that the maximum length fits an integer limit.
+pub(crate) struct LenWithin<const MAX_LEN: usize, const LIMIT: usize>;
+
+impl<const MAX_LEN: usize, const LIMIT: usize> LenWithin<MAX_LEN, LIMIT> {
+    pub(crate) const VALID: () = assert!(
+        MAX_LEN <= LIMIT,
+        "the upper bound of the confinement exceeds the integer limit"
+    );
+}
+
 /// Build-time check that the bounds of the second confinement include the
 /// bounds of the first one.
 pub(crate) struct Widens<
