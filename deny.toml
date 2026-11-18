@@ -28,7 +28,8 @@ highlight = "all"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# Reviewed exception (owner: @dr-orlovsky): `amplify_num` 0.6.0 is pinned to
-# commit `e359d07` until the modernized 0.6.0 release is published on crates.io;
-# review and remove this git source exception upon crates.io publication.
+# Reviewed exception (owner: @dr-orlovsky): `amplify_num` 0.6.0 is sourced from
+# the `develop` branch (locked in `Cargo.lock`) until the modernized 0.6.0
+# release is published on crates.io; review and remove this git source exception
+# upon crates.io publication.
 allow-git = ["https://github.com/rust-amplify/amplify-num"]

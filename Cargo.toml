@@ -21,7 +21,7 @@ name = "cortex_m"
 required-features = ["heapless"]
 
 [dependencies]
-amplify_num = { git = "https://github.com/rust-amplify/amplify-num", rev = "e359d07", default-features = false }
+amplify_num = { git = "https://github.com/rust-amplify/amplify-num", branch = "develop", default-features = false }
 collections = { package = "collections-traits", version = "0.1.0", default-features = false }
 
 ascii = { version = "1.1.0", default-features = false, optional = true }

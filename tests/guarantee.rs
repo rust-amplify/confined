@@ -489,11 +489,18 @@ fn btree_set_keeps_its_optional_first_and_last_access() {
 
 #[test]
 fn len_integer_methods_accept_any_safe_maximum() {
+    fn assert_unsigned<T: amplify_num::Unsigned>(value: T) -> T {
+        value
+    }
+
     let short = Confined::<Vec<u8>, 0, 10>::try_from(vec![1, 2]).unwrap();
-    assert_eq!(short.len_u8(), 2);
-    assert_eq!(short.len_u16(), 2);
-    assert_eq!(short.len_u24(), amplify_num::u24::try_from(2u32).unwrap());
-    assert_eq!(short.len_u32(), 2);
+    assert_eq!(assert_unsigned(short.len_u8()), 2);
+    assert_eq!(assert_unsigned(short.len_u16()), 2);
+    assert_eq!(
+        assert_unsigned(short.len_u24()),
+        amplify_num::u24::from_str_radix("2", 16).unwrap()
+    );
+    assert_eq!(assert_unsigned(short.len_u32()), 2);
 
     let u8_boundary = Confined::<Vec<u8>, 0, U8MAX>::try_from(vec![0; U8MAX]).unwrap();
     assert_eq!(u8_boundary.len_u8(), u8::MAX);

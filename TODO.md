@@ -1,3 +1,3 @@
-- [ ] Update to use new amplify_num
+- [x] Update to use new amplify_num
 - [ ] Ensure test coverage
 - [ ] Security audit

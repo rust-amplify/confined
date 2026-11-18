@@ -26,16 +26,16 @@ use confined::{Confined, Error};
 type Signers = Confined<Vec<&'static str>, 1, 3>;
 
 // The size is checked once, when the value is created...
-let mut signers = Signers::try_from(vec!["alice"])?;
+let mut signers = Signers::try_from(vec!["alice"]) ?;
 assert_eq!(Signers::try_from(vec![]), Err(Error::Undersize { len: 0, min_len: 1 }));
 
 // ...and again by every operation that changes it.
-signers.push("bob")?;
-signers.push("carol")?;
+signers.push("bob") ?;
+signers.push("carol") ?;
 assert_eq!(signers.push("dave"), Err(Error::Oversize { len: 3, max_len: 3 }));
 
-signers.remove(0)?;
-signers.remove(0)?;
+signers.remove(0) ?;
+signers.remove(0) ?;
 assert_eq!(signers.remove(0), Err(Error::Undersize { len: 1, min_len: 1 }));
 
 // Everything read-only comes from the inner `Vec` through `Deref`.
@@ -78,8 +78,8 @@ Ok::<(), confined::Error>(())
 - **Length prefixes cannot overflow.** If the maximum is `u16::MAX`, the length
   always fits a `u16`, and `len_u16()` returns it without a cast or an `unwrap`.
   This is handy for binary encodings and consensus-critical data.
-- **Bounded collection length.** An upper limit caps the number of items
-  (or string bytes), not total memory or processing time; see
+- **Bounded collection length.** An upper limit caps the number of items (or string bytes), not
+  total memory or processing time; see
   [SECURITY.md](./SECURITY.md) for the resource model.
 - **No memory overhead.** `Confined` is a newtype with the same size as the
   collection it wraps. The limits exist only in the type.
@@ -109,15 +109,15 @@ The compiler contributes three things.
    involved is a constant, a wrong combination stops the build instead of
    returning an error at run time. The second table lists these checks.
 
-| Condition                 | Methods                                                                                                                                                                                                                                                                                             |
-|---------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Condition                 | Methods                                                                                                                                                                                                                                                                                                                                              |
+|---------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `MIN_LEN` is `0`          | `new()`, `new_in()`, `with_capacity()`, `with_capacity_in()`, `try_with_capacity()`, `try_with_capacity_in()`, `Default`, `clear()`; `pop()` on `Vec`, `String`, `AsciiString` and `BinaryHeap`; `pop_front()` and `pop_back()` on `VecDeque` and `LinkedList`; `truncate()` and `drain()` on `VecDeque`; `retain()` on maps; `drain()` on `HashMap` |
-| `MIN_LEN > 0`             | `first()` and `last()` on indexable collections (`Vec`, `VecDeque`, `AsciiString`, `IndexSet`); `first_mut()` and `last_mut()` where the collection also supports mutable indexing (`Vec`, `VecDeque`, `AsciiString`)                                                                               |
-| `MIN_LEN <= 1 <= MAX_LEN` | `with(item)`, `with_in(item, allocator)`; `with_key_value(k, v)` on maps                                                                                                                                                                                                                            |
-| `MAX_LEN <= U8MAX`        | `len_u8() -> u8`                                                                                                                                                                                                                                                                                    |
-| `MAX_LEN <= U16MAX`       | `len_u16() -> u16`                                                                                                                                                                                                                                                                                  |
-| `MAX_LEN <= U24MAX`       | `len_u24() -> amplify_num::u24`                                                                                                                                                                                                                                                                     |
-| `MAX_LEN <= U32MAX`       | `len_u32() -> u32`                                                                                                                                                                                                                                                                                  |
+| `MIN_LEN > 0`             | `first()` and `last()` on indexable collections (`Vec`, `VecDeque`, `AsciiString`, `IndexSet`); `first_mut()` and `last_mut()` where the collection also supports mutable indexing (`Vec`, `VecDeque`, `AsciiString`)                                                                                                                                |
+| `MIN_LEN <= 1 <= MAX_LEN` | `with(item)`, `with_in(item, allocator)`; `with_key_value(k, v)` on maps                                                                                                                                                                                                                                                                             |
+| `MAX_LEN <= U8MAX`        | `len_u8() -> u8`                                                                                                                                                                                                                                                                                                                                     |
+| `MAX_LEN <= U16MAX`       | `len_u16() -> u16`                                                                                                                                                                                                                                                                                                                                   |
+| `MAX_LEN <= U24MAX`       | `len_u24() -> amplify_num::u24`                                                                                                                                                                                                                                                                                                                      |
+| `MAX_LEN <= U32MAX`       | `len_u32() -> u32`                                                                                                                                                                                                                                                                                                                                   |
 
 These are range checks, not exact matches: for example, `MIN_LEN = 2` is
 enough for `first()` and `last()`, and `len_u8()` works for any maximum no
@@ -151,23 +151,22 @@ confined = { git = "https://github.com/rust-amplify/confined" }
 
 The minimum supported Rust version is 1.100.0; the crate uses edition 2024.
 No downstream `[patch]` is needed. The dependency imported as `collections`
-is the released `collections-traits` 0.1.0 package. `amplify_num` 0.6.0 remains
-a direct Git dependency pinned to develop commit `e359d07`, not a moving branch.
+is the released `collections-traits` 0.1.0 package.
 
 ### Cargo features
 
-| Feature       | Default | What it adds |
-|---------------|:-------:|--------------|
-| `std`         | yes | Implies `alloc`; standard `HashMap` / `HashSet`, `std::io::Write`, and standard-library integration for enabled dependencies |
-| `alloc`       | via `std` | Allocating collections such as `Vec`, `String`, trees, lists and heaps, usable without `std` |
-| `hex`         | yes | Hex formatting and bounded `amplify_num::hex::FromHex` for confined byte vectors when `alloc` is enabled; does not itself enable `alloc` |
-| `ascii`       | no | Implies `alloc`; `AsciiString`, `AsciiError`, and the `confined::ascii` re-export |
-| `indexmap`    | no | Implies `alloc`, not `std`; custom-hasher `IndexMap` / `IndexSet` and the `confined::indexmap` re-export |
-| `hashbrown`   | no | Implies `alloc`, not `std`; allocator-aware `HashMap` / `HashSet` and the `confined::hashbrown` re-export |
-| `heapless`    | no | Fixed-capacity collections and the `confined::heapless` re-export; no allocator required |
-| `serde`       | no | `Serialize` / `Deserialize` when the inner collection supports them; does not itself enable `alloc` or ASCII serialization |
-| `ascii-serde` | no | Enables `ascii`, `serde`, `std` and `ascii/serde` for ASCII serialization |
-| `all`         | no | Everything above, including the std-only `ascii-serde` integration |
+| Feature       |  Default  | What it adds                                                                                                                             |
+|---------------|:---------:|------------------------------------------------------------------------------------------------------------------------------------------|
+| `std`         |    yes    | Implies `alloc`; standard `HashMap` / `HashSet`, `std::io::Write`, and standard-library integration for enabled dependencies             |
+| `alloc`       | via `std` | Allocating collections such as `Vec`, `String`, trees, lists and heaps, usable without `std`                                             |
+| `hex`         |    yes    | Hex formatting and bounded `amplify_num::hex::FromHex` for confined byte vectors when `alloc` is enabled; does not itself enable `alloc` |
+| `ascii`       |    no     | Implies `alloc`; `AsciiString`, `AsciiError`, and the `confined::ascii` re-export                                                        |
+| `indexmap`    |    no     | Implies `alloc`, not `std`; custom-hasher `IndexMap` / `IndexSet` and the `confined::indexmap` re-export                                 |
+| `hashbrown`   |    no     | Implies `alloc`, not `std`; allocator-aware `HashMap` / `HashSet` and the `confined::hashbrown` re-export                                |
+| `heapless`    |    no     | Fixed-capacity collections and the `confined::heapless` re-export; no allocator required                                                 |
+| `serde`       |    no     | `Serialize` / `Deserialize` when the inner collection supports them; does not itself enable `alloc` or ASCII serialization               |
+| `ascii-serde` |    no     | Enables `ascii`, `serde`, `std` and `ascii/serde` for ASCII serialization                                                                |
+| `all`         |    no     | Everything above, including the std-only `ascii-serde` integration                                                                       |
 
 Default features are `std` + `hex`. With `default-features = false`, the core
 wrapper needs neither `std` nor `alloc`. `heapless`, `serde` and `hex`, alone
@@ -313,9 +312,9 @@ not the number of allocated bytes.
 # {
 use confined::Confined;
 
-let mut bytes = Confined::<Vec<u8>, 0, 4>::try_with_capacity(100)?;
-bytes.extend([1, 2])?;
-bytes.try_reserve(2)?;
+let mut bytes = Confined::<Vec<u8>, 0, 4 >::try_with_capacity(100) ?;
+bytes.extend([1, 2]) ?;
+bytes.try_reserve(2) ?;
 assert!(bytes.try_reserve(3).is_err()); // only two more items fit
 # }
 Ok::<(), confined::Error>(())
@@ -455,8 +454,8 @@ runs out, even if `MAX_LEN` would allow another item.
 # {
 use confined::{Error, HeaplessVec};
 
-let mut samples = HeaplessVec::<u8, 2, 0, 3>::new();
-samples.extend([10, 20])?;
+let mut samples = HeaplessVec::<u8, 2, 0, 3 >::new();
+samples.extend([10, 20]) ?;
 assert!(matches!(samples.push(30), Err(Error::CapacityExceeded { .. })));
 assert_eq!(samples.len(), 2);
 # }
@@ -465,15 +464,15 @@ Ok::<(), confined::Error>(())
 
 The aliases keep native capacity separate from confinement limits:
 
-| Alias | Parameters |
-|-------|------------|
-| `HeaplessVec` | `<T, CAP, MIN = 0, MAX = usize::MAX, L = usize>` |
-| `HeaplessString` | `<CAP, MIN = 0, MAX = usize::MAX, L = usize>` |
-| `HeaplessDeque` | `<T, CAP, MIN = 0, MAX = usize::MAX>` |
-| `HeaplessHeap` | `<T, K, CAP, MIN = 0, MAX = usize::MAX>` |
-| `HeaplessIndexSet` | `<T, S, CAP, MIN = 0, MAX = usize::MAX>` |
-| `HeaplessIndexMap` | `<K, V, S, CAP, MIN = 0, MAX = usize::MAX>` |
-| `HeaplessLinearMap` | `<K, V, CAP, MIN = 0, MAX = usize::MAX>` |
+| Alias               | Parameters                                       |
+|---------------------|--------------------------------------------------|
+| `HeaplessVec`       | `<T, CAP, MIN = 0, MAX = usize::MAX, L = usize>` |
+| `HeaplessString`    | `<CAP, MIN = 0, MAX = usize::MAX, L = usize>`    |
+| `HeaplessDeque`     | `<T, CAP, MIN = 0, MAX = usize::MAX>`            |
+| `HeaplessHeap`      | `<T, K, CAP, MIN = 0, MAX = usize::MAX>`         |
+| `HeaplessIndexSet`  | `<T, S, CAP, MIN = 0, MAX = usize::MAX>`         |
+| `HeaplessIndexMap`  | `<K, V, S, CAP, MIN = 0, MAX = usize::MAX>`      |
+| `HeaplessLinearMap` | `<K, V, CAP, MIN = 0, MAX = usize::MAX>`         |
 
 `K` in `HeaplessHeap` selects the heap kind; `S` is the index collection's
 hasher. Convenience constructors such as `new()` and `with()` follow the
@@ -484,18 +483,18 @@ too small. Use checked construction and mutation for fallible input paths.
 
 The crate exports constants for the common limits:
 
-| Constant | Value                                                        |
-|----------|--------------------------------------------------------------|
-| `ZERO`   | `0`                                                          |
-| `ONE`    | `1`                                                          |
-| `U8MAX`  | `u8::MAX` (255)                                              |
-| `U16MAX` | `u16::MAX` (65 535)                                          |
-| `U24MAX` | min(2²⁴ − 1, `usize::MAX`)                                   |
-| `U32MAX` | min(2³² − 1, `usize::MAX`)                                   |
-| `U40MAX` | min(2⁴⁰ − 1, `usize::MAX`)                                   |
-| `U48MAX` | min(2⁴⁸ − 1, `usize::MAX`)                                   |
-| `U56MAX` | min(2⁵⁶ − 1, `usize::MAX`)                                   |
-| `U64MAX` | min(2⁶⁴ − 1, `usize::MAX`)                                   |
+| Constant | Value                      |
+|----------|----------------------------|
+| `ZERO`   | `0`                        |
+| `ONE`    | `1`                        |
+| `U8MAX`  | `u8::MAX` (255)            |
+| `U16MAX` | `u16::MAX` (65 535)        |
+| `U24MAX` | min(2²⁴ − 1, `usize::MAX`) |
+| `U32MAX` | min(2³² − 1, `usize::MAX`) |
+| `U40MAX` | min(2⁴⁰ − 1, `usize::MAX`) |
+| `U48MAX` | min(2⁴⁸ − 1, `usize::MAX`) |
+| `U56MAX` | min(2⁵⁶ − 1, `usize::MAX`) |
+| `U64MAX` | min(2⁶⁴ − 1, `usize::MAX`) |
 
 The `len_u8()` family accepts any maximum no greater than the corresponding
 constant; the ready-made aliases use these constants as their exact maxima.
@@ -663,7 +662,7 @@ assert_eq!(
 );
 
 # }
-Ok::<(), Box<dyn std::error::Error>>(())
+Ok::<(), Box<dyn std::error::Error> > (())
 ```
 
 ### Errors
@@ -709,24 +708,24 @@ package is imported as `collections`: `CollectionBase` owns `Item`,
 `CollectionMap` and `CollectionEntry` are separate, so map mutation does not
 require entry support. Sets use `CollectionSet` where available.
 
-| Collection          | Feature      | Checked methods specific to it                                                                                       |
-|---------------------|--------------|----------------------------------------------------------------------------------------------------------------------|
-| `Vec<T, A>`         | `alloc`      | `as_slice`, `into_vec`, `iter`, `remove`, `pop`¹; `from_array`, `try_from_slice`, `from_slice_checked` with `Global` |
-| `Vec<u8, A>`        | `alloc`      | `std::io::Write` (`std`); `LowerHex`, `UpperHex` (`hex`); `FromHex` (`hex`, `A: Default`)                            |
-| `String`            | `alloc`      | `TryFrom<&str>`, `FromStr`, `remove`, `pop`¹                                                                         |
-| `AsciiString`       | `ascii`      | `TryFrom<&str>`, `FromStr`, `remove`, `pop`¹                                                                         |
-| `VecDeque<T>`       | `alloc`      | `push_front`, `push_back`, `remove`, `pop_front`¹, `pop_back`¹, `drain`¹, `truncate`¹                                |
-| `LinkedList<T>`     | `alloc`      | `push_front`, `push_back`, `remove`, `pop_front`¹, `pop_back`¹                                                       |
-| `BinaryHeap<T>`     | `alloc`      | `pop`¹; generic `push` / `extend` with `T: Ord`                                                                      |
-| `BTreeSet<T>`       | `alloc`      | `remove`, `take`                                                                                                     |
-| `HashSet<T, S>`     | `std`        | `remove`, `take`                                                                                                     |
-| `IndexSet<T, S>`    | `indexmap`   | `remove`, `take`                                                                                                     |
-| `BTreeMap<K, V>`    | `alloc`      | `remove`, `remove_entry`, `pop_first`, `pop_last`, `append`, `split_off`, `range_mut`, `into_keys`, `into_values`    |
-| `HashMap<K, V, S>`  | `std`        | `remove`, `remove_entry`, `reserve`, `shrink_to_fit`, `shrink_to`, `into_keys`, `into_values`, `drain`¹              |
-| `IndexMap<K, V, S>` | `indexmap`   | `remove`, `into_keys`, `into_values`                                                                                 |
-| `hashbrown::HashMap<K, V, S, A>`, `HashSet<T, S, A>` | `hashbrown` | Custom hashers and allocators; fallible native capacity handling |
-| `heapless::Vec<T, N, L>`, `String<N, L>`, `Deque`, `BinaryHeap` | `heapless` | Fixed-capacity checked mutation without allocation |
-| `heapless::IndexSet`, `IndexMap`, `LinearMap` | `heapless` | Fixed-capacity set/map operations; `IndexSet::remove` but no `take` |
+| Collection                                                      | Feature     | Checked methods specific to it                                                                                       |
+|-----------------------------------------------------------------|-------------|----------------------------------------------------------------------------------------------------------------------|
+| `Vec<T, A>`                                                     | `alloc`     | `as_slice`, `into_vec`, `iter`, `remove`, `pop`¹; `from_array`, `try_from_slice`, `from_slice_checked` with `Global` |
+| `Vec<u8, A>`                                                    | `alloc`     | `std::io::Write` (`std`); `LowerHex`, `UpperHex` (`hex`); `FromHex` (`hex`, `A: Default`)                            |
+| `String`                                                        | `alloc`     | `TryFrom<&str>`, `FromStr`, `remove`, `pop`¹                                                                         |
+| `AsciiString`                                                   | `ascii`     | `TryFrom<&str>`, `FromStr`, `remove`, `pop`¹                                                                         |
+| `VecDeque<T>`                                                   | `alloc`     | `push_front`, `push_back`, `remove`, `pop_front`¹, `pop_back`¹, `drain`¹, `truncate`¹                                |
+| `LinkedList<T>`                                                 | `alloc`     | `push_front`, `push_back`, `remove`, `pop_front`¹, `pop_back`¹                                                       |
+| `BinaryHeap<T>`                                                 | `alloc`     | `pop`¹; generic `push` / `extend` with `T: Ord`                                                                      |
+| `BTreeSet<T>`                                                   | `alloc`     | `remove`, `take`                                                                                                     |
+| `HashSet<T, S>`                                                 | `std`       | `remove`, `take`                                                                                                     |
+| `IndexSet<T, S>`                                                | `indexmap`  | `remove`, `take`                                                                                                     |
+| `BTreeMap<K, V>`                                                | `alloc`     | `remove`, `remove_entry`, `pop_first`, `pop_last`, `append`, `split_off`, `range_mut`, `into_keys`, `into_values`    |
+| `HashMap<K, V, S>`                                              | `std`       | `remove`, `remove_entry`, `reserve`, `shrink_to_fit`, `shrink_to`, `into_keys`, `into_values`, `drain`¹              |
+| `IndexMap<K, V, S>`                                             | `indexmap`  | `remove`, `into_keys`, `into_values`                                                                                 |
+| `hashbrown::HashMap<K, V, S, A>`, `HashSet<T, S, A>`            | `hashbrown` | Custom hashers and allocators; fallible native capacity handling                                                     |
+| `heapless::Vec<T, N, L>`, `String<N, L>`, `Deque`, `BinaryHeap` | `heapless`  | Fixed-capacity checked mutation without allocation                                                                   |
+| `heapless::IndexSet`, `IndexMap`, `LinearMap`                   | `heapless`  | Fixed-capacity set/map operations; `IndexSet::remove` but no `take`                                                  |
 
 ¹ Only when `MIN_LEN` is `0`. `std::io::Write` is available for any `MIN_LEN`,
 because writing only appends bytes.
@@ -747,14 +746,14 @@ For an ordinary custom `CollectionBase`, an empty
 from `CollectionBase`; there is no `Access`, `ViaCollection` or
 `ViaCollectionAlloc` dispatch layer. Its hooks are:
 
-| Hook | Default / contract |
-|------|--------------------|
-| `confined_len(&self) -> usize` | Uses `item_count`; override when confinement units differ |
-| `item_len(&Item) -> usize` | Returns `1` |
-| `MAX_ITEM_LEN` | `1`; must bound the length contribution of one item |
-| `item_growth(&self, &Item) -> usize` | Uses `item_len`; sets/maps return `0` for duplicates |
+| Hook                                            | Default / contract                                                                           |
+|-------------------------------------------------|----------------------------------------------------------------------------------------------|
+| `confined_len(&self) -> usize`                  | Uses `item_count`; override when confinement units differ                                    |
+| `item_len(&Item) -> usize`                      | Returns `1`                                                                                  |
+| `MAX_ITEM_LEN`                                  | `1`; must bound the length contribution of one item                                          |
+| `item_growth(&self, &Item) -> usize`            | Uses `item_len`; sets/maps return `0` for duplicates                                         |
 | `try_push(&mut self, Item) -> Result<(), Item>` | Uses infallible `CollectionBase::push`; capacity-backed implementations override it fallibly |
-| `prepare_entry(&mut self) -> Result<(), Error>` | Ensures native room before exposing an infallible entry insertion |
+| `prepare_entry(&mut self) -> Result<(), Error>` | Ensures native room before exposing an infallible entry insertion                            |
 
 Custom implementations must keep length, growth and mutation contracts
 consistent. UTF-8 strings override the character-counting upstream
@@ -764,19 +763,19 @@ counts each inserted character by its encoded byte length.
 The generic API is available with `ItemLen` and the relevant operation's
 additional bounds (for example `CollectionMap`, `Index` or `Clone`):
 
-| Purpose               | Items                                                                                                                              |
-|-----------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| Create                | `try_from`, `try_from_iter`, `from_checked`, `from_iter_checked`                                                                   |
+| Purpose               | Items                                                                                                                                                |
+|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Create                | `try_from`, `try_from_iter`, `from_checked`, `from_iter_checked`                                                                                     |
 | Create with allocator | `new_in`, `with_capacity_in`, `try_with_capacity_in`, `with_in`, `try_from_iter_in`, `from_iter_checked_in` on supported allocator-aware collections |
-| Reserve               | `try_reserve`, `try_with_capacity`, `try_with_capacity_in` on supported reservable collections |
-| Change limits         | `widen` to limits that include the current ones                                                                                    |
-| Read                  | `Deref<Target = C>`, `as_unconfined`, `to_unconfined`, `AsRef<[T]>`, `Borrow<[T]>`, `Index`, `Display`, iteration over `&Confined` |
-| Change items          | `IndexMut`, `AsMut<[T]>`, `BorrowMut<[T]>`, `iter_mut`, iteration over `&mut Confined`                                             |
-| Change size           | `push`, `extend`                                                                                                                   |
-| Unwrap                | `release`, by-value `IntoIterator`                                                                                                 |
-| Maps                  | `insert`, `get_mut`, `values_mut`, `keyed_values_mut`, `try_retain`, `retain`¹; `entry` additionally requires `CollectionEntry` |
-| Re-validate           | `with_mut(f)` returns `Err` and `as_mut_checked(f)` panics if the limits do not hold after the closure has run                     |
-| Derived traits        | `Clone`, `Debug`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Hash`, whenever the inner collection implements them                    |
+| Reserve               | `try_reserve`, `try_with_capacity`, `try_with_capacity_in` on supported reservable collections                                                       |
+| Change limits         | `widen` to limits that include the current ones                                                                                                      |
+| Read                  | `Deref<Target = C>`, `as_unconfined`, `to_unconfined`, `AsRef<[T]>`, `Borrow<[T]>`, `Index`, `Display`, iteration over `&Confined`                   |
+| Change items          | `IndexMut`, `AsMut<[T]>`, `BorrowMut<[T]>`, `iter_mut`, iteration over `&mut Confined`                                                               |
+| Change size           | `push`, `extend`                                                                                                                                     |
+| Unwrap                | `release`, by-value `IntoIterator`                                                                                                                   |
+| Maps                  | `insert`, `get_mut`, `values_mut`, `keyed_values_mut`, `try_retain`, `retain`¹; `entry` additionally requires `CollectionEntry`                      |
+| Re-validate           | `with_mut(f)` returns `Err` and `as_mut_checked(f)` panics if the limits do not hold after the closure has run                                       |
+| Derived traits        | `Clone`, `Debug`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Hash`, whenever the inner collection implements them                                      |
 
 ## Behaviour worth knowing
 
@@ -830,15 +829,12 @@ additional bounds (for example `CollectionMap`, `Index` or `Clone`):
 
 ## Status and known limitations
 
-- **Git dependency.** `amplify_num` remains pinned to a Git commit; see
-  [Installation](#installation). The pin provides a reproducible input, not an
-  assurance of security or an audit result.
 - **ASCII serialization needs `std`.** `ascii` + `serde` is supported without
   `std`, but ASCII serialization explicitly requires `ascii-serde` because
   ASCII 1.1's serde code imports `std` unconditionally.
 - **ASCII requires pointer atomics.** ASCII 1.1 imports `alloc::sync::Arc`
-  unconditionally, so its optional integration cannot build on Cortex-M0
-  (`thumbv6m-none-eabi`). Core, heapless, and the other allocating integrations
+  unconditionally, so its optional integration cannot build on Cortex-M0 (`thumbv6m-none-eabi`).
+  Core, heapless, and the other allocating integrations
   work there; ASCII is checked on Cortex-M4 (`thumbv7em-none-eabi`).
 - **Not all allocation is fallible.** Trees, linked lists and ASCII strings
   lack upstream fallible reservation and can abort on OOM. `Clone`, `From`,

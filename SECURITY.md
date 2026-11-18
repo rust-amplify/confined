@@ -5,9 +5,11 @@ execution-time budget. Applications handling untrusted input must also limit
 the resources used by elements, iterators, hashers and deserializers.
 
 The library uses `#![forbid(unsafe_code)]`. This does not audit dependencies,
-exclude unsafe code inside them, or guarantee absence of logic errors. Git
-dependency pins make inputs reproducible; they are not an audit result or a
-statement about dependency advisories.
+exclude unsafe code inside them, or guarantee absence of logic errors.
+`Cargo.lock` records the tested Git dependency revision for this repository,
+while downstream Git consumers resolve the `develop` branch unless locked in
+their own `Cargo.lock`; neither is an audit result or a statement about
+dependency advisories.
 
 ## Length and capacity guarantees
 
