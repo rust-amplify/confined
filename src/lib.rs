@@ -126,3 +126,75 @@ const fn max_usize(bits: u32) -> usize {
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod max_usize {
+        use super::*;
+
+        #[test]
+        fn zero_bits_hold_zero() {
+            assert_eq!(max_usize(0), 0);
+        }
+
+        #[test]
+        fn width_below_the_pointer_width_is_exact() {
+            assert_eq!(max_usize(1), 1);
+            assert_eq!(max_usize(8), 0xFF);
+            assert_eq!(max_usize(usize::BITS - 1), usize::MAX >> 1);
+        }
+
+        #[test]
+        fn pointer_width_is_the_whole_range() {
+            assert_eq!(max_usize(usize::BITS), usize::MAX);
+        }
+
+        #[test]
+        fn width_above_the_pointer_width_is_capped_and_does_not_overflow() {
+            assert_eq!(max_usize(usize::BITS + 1), usize::MAX);
+            assert_eq!(max_usize(u32::MAX), usize::MAX);
+        }
+    }
+
+    mod constants {
+        use super::*;
+
+        /// The largest value of an unsigned integer of the given width, or
+        /// `usize::MAX` if the integer is wider than `usize`.
+        fn capped(bits: u32) -> usize {
+            usize::try_from((1u128 << bits) - 1).unwrap_or(usize::MAX)
+        }
+
+        #[test]
+        fn lower_bounds() {
+            assert_eq!(ZERO, 0);
+            assert_eq!(ONE, 1);
+        }
+
+        #[test]
+        fn upper_bounds_which_fit_any_platform() {
+            assert_eq!(U8MAX, 255);
+            assert_eq!(U16MAX, 65_535);
+        }
+
+        #[test]
+        fn upper_bounds_are_capped_at_the_pointer_width() {
+            assert_eq!(U24MAX, capped(24));
+            assert_eq!(U32MAX, capped(32));
+            assert_eq!(U40MAX, capped(40));
+            assert_eq!(U48MAX, capped(48));
+            assert_eq!(U56MAX, capped(56));
+            assert_eq!(U64MAX, capped(64));
+        }
+
+        #[test]
+        fn upper_bounds_do_not_decrease() {
+            let bounds = [
+                ZERO, ONE, U8MAX, U16MAX, U24MAX, U32MAX, U40MAX, U48MAX, U56MAX, U64MAX,
+            ];
+            assert!(bounds.is_sorted());
+        }
+    }
+}

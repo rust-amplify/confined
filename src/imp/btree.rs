@@ -48,18 +48,26 @@ impl<'a, K: Ord, V> Entry<'a, BTreeMap<K, V>> {
 }
 
 impl<T: Ord, const MIN_LEN: usize, const MAX_LEN: usize> Confined<BTreeSet<T>, MIN_LEN, MAX_LEN> {
-    /// Removes an element from the set. Errors if the index exceeds the number
-    /// of elements in the set, of if the new collection length will be less
-    /// than the confinement requirement. Returns if the element was present
-    /// in the set.
+    /// Removes an element from the set, returning whether it was present.
+    /// Removing an element which is not in the set is not an error, even at
+    /// the lower bound.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the element is present and the set has no more elements than
+    /// the lower bound of the confinement. The set is left unchanged.
     pub fn remove(&mut self, elem: &T) -> Result<bool, Error> {
         self.remove_from_set(elem, |set, elem| set.remove(elem))
     }
 
-    /// Removes an element from the set. Errors if the index exceeds the number
-    /// of elements in the set, of if the new collection length will be less
-    /// than the confinement requirement. Returns the removed element
-    /// otherwise.
+    /// Removes an element from the set and returns it, or `None` if it was
+    /// not present. Taking an element which is not in the set is not an
+    /// error, even at the lower bound.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the element is present and the set has no more elements than
+    /// the lower bound of the confinement. The set is left unchanged.
     pub fn take(&mut self, elem: &T) -> Result<Option<T>, Error> {
         self.take_from_set(elem, |set, elem| set.take(elem))
     }
@@ -67,10 +75,14 @@ impl<T: Ord, const MIN_LEN: usize, const MAX_LEN: usize> Confined<BTreeSet<T>, M
 impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<BTreeMap<K, V>, MIN_LEN, MAX_LEN>
 {
-    /// Removes an element from the map. Errors if the index exceeds the number
-    /// of elements in the map, of if the new collection length will be less
-    /// than the confinement requirement. Returns the removed value
-    /// otherwise.
+    /// Removes a key from the map and returns its value, or `None` if the key
+    /// was not present. Removing a key which is not in the map is not an
+    /// error, even at the lower bound.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the key is present and the map has no more entries than the
+    /// lower bound of the confinement. The map is left unchanged.
     pub fn remove(&mut self, key: &K) -> Result<Option<V>, Error> {
         self.remove_from_map(key, |map, key| map.remove(key))
     }
@@ -119,7 +131,9 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
     ///
     /// If a key from `other` is already present in `self`, the respective
     /// value from `self` is overwritten with the respective value from
-    /// `other`. Such a key doesn't add to the length of `self`.
+    /// `other`. Such a key doesn't add to the length of `self`. The key
+    /// stored in `self` is kept and the equal key from `other` is dropped,
+    /// as with `insert`.
     ///
     /// The `other` map is left empty, so it must not have a lower bound:
     ///
@@ -145,11 +159,24 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
     ///
     /// Errors if the maximum confinement is exceeded after the operation.
     /// Both maps are left unchanged in this case.
+    ///
+    /// # Panics
+    ///
+    /// A panic of a comparison or of a destructor is propagated. The entries
+    /// moved before it stay in `self`, and the entries not moved yet stay in
+    /// `other`. The entry which was being moved is dropped if a comparison
+    /// panicked; it is already in `self` if the panic came from the
+    /// destructor of the value it replaced or of its duplicate key. The map
+    /// never falls below its lower bound: the entries are moved one by one,
+    /// and a value is replaced before the previous one is dropped. The
+    /// native `append` is not used: on Rust 1.100 it leaves the map without
+    /// the entry of a shared key when the destructor of its previous value
+    /// panics.
     pub fn append<const MAX_LEN2: usize>(
         &mut self,
         other: &mut Confined<BTreeMap<K, V>, ZERO, MAX_LEN2>,
     ) -> Result<(), Error> {
-        let room = MAX_LEN - self.len();
+        let room = MAX_LEN.saturating_sub(self.len());
         let growth = if other.len() <= room {
             other.len()
         } else {
@@ -165,7 +192,13 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
                 max_len: MAX_LEN,
             });
         }
-        self.0.append(&mut other.0);
+        if self.0.is_empty() {
+            core::mem::swap(&mut self.0, &mut other.0);
+            return Ok(());
+        }
+        while let Some((key, value)) = other.0.pop_first() {
+            self.0.insert(key, value);
+        }
         Ok(())
     }
 
@@ -181,6 +214,13 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
     /// comparison or cloning panic leaves the original map unchanged. This
     /// avoids the panic-unsafe native split on Rust 1.100. Dropping originals
     /// may still panic, but cannot take the map below its minimum length.
+    ///
+    /// The bounds are checked for the map which is really built from the
+    /// clones, and not only for the number of the entries to split off. They
+    /// differ when `Eq` of the keys is inconsistent with their `Ord`: the
+    /// clones which compare equal with `==` are merged into a single entry.
+    /// The original map is left unchanged if the built map is out of the
+    /// bounds.
     pub fn split_off<const MIN_LEN2: usize, const MAX_LEN2: usize>(
         &mut self,
         key: &K,
@@ -214,18 +254,25 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
             });
         }
 
-        let other = self
+        let other: BTreeMap<K, V> = self
             .0
             .range(key..)
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
+        let other = Confined::try_from(other)?;
         for _ in 0..len2 {
             self.0.pop_last();
         }
-        Ok(Confined(other))
+        Ok(other)
     }
 
-    /// Gets a mutable iterator over the specified range.
+    /// Gets a mutable iterator over the specified range. The values can be
+    /// changed through it, which doesn't affect the length of the map.
+    ///
+    /// # Panics
+    ///
+    /// Panics, like [`BTreeMap::range_mut`], if the start of the range is
+    /// greater than its end, or if both bounds are equal and excluded.
     pub fn range_mut<R>(&mut self, range: R) -> btree_map::RangeMut<'_, K, V>
     where
         R: RangeBounds<K>,
@@ -233,14 +280,14 @@ impl<K: Ord, V, const MIN_LEN: usize, const MAX_LEN: usize>
         self.0.range_mut(range)
     }
 
-    /// Creates a consuming iterator visiting all the keys in arbitrary order.
+    /// Creates a consuming iterator visiting all the keys in sorted order.
     /// The map cannot be used after calling this.
     /// The iterator element type is `K`.
     pub fn into_keys(self) -> btree_map::IntoKeys<K, V> {
         self.0.into_keys()
     }
 
-    /// Creates a consuming iterator visiting all the values in arbitrary order.
+    /// Creates a consuming iterator visiting all the values in order by key.
     /// The map cannot be used after calling this.
     /// The iterator element type is `V`.
     pub fn into_values(self) -> btree_map::IntoValues<K, V> {

@@ -45,6 +45,13 @@ constructors such as `new()` and `with()` are not general fallible resource
 APIs; `with()` can panic when fixed capacity is insufficient. Prefer checked
 construction and fallible reservation where available.
 
+An item which a set already holds, and a key which a map already holds, add
+nothing, so checked `push`, `extend`, `insert` and `entry` handle them without
+asking the hash table for room: the table is not reallocated, and the
+operation does not depend on the allocator. A new item in a table without
+spare capacity is reported as `Error::CapacityExceeded { len }` when the
+allocation is refused.
+
 `FromHex` also retains `Vec::push` allocation semantics: the upstream
 `hex::Error` type cannot represent allocation failure. Decoding validates
 actual length and ignores iterator size hints, but allocation can still abort.
@@ -59,6 +66,43 @@ additional memory. Comparison or clone panics leave the original unchanged;
 a destructor panic can leave partial removal, always above the lower bound.
 Regression tests inject a panic at every comparison in both small and
 multi-level trees. This protection does not apply to a map after `release()`.
+The bounds of the right-hand map are checked once more for the map really
+built from the clones, before anything is removed: keys whose `Eq` disagrees
+with their `Ord` are merged while the clones are collected, so the built map
+can be shorter than the number of the entries split off.
+
+**B-tree appending moves entries one by one.** On Rust 1.100, a destructor of
+a replaced value which panics inside the native `BTreeMap::append` leaves the
+map without the entry of the shared key, which can take it below the lower
+bound. The confined implementation never calls it: after checking the upper
+bound, it pops the entries of the source map and inserts them, so a value is
+replaced before the previous one is dropped. This takes `O(m log(n + m))`
+comparisons for `m` appended entries. If a comparison or a destructor panics,
+the entries moved so far stay in the map and the rest stays in the source.
+
+**Map retention is repaired after a panic.** `indexmap::IndexMap` and
+`heapless::IndexMap` rebuild their index table only at the end of `retain`.
+When the predicate, or a destructor of a removed entry, panics in the middle,
+the table keeps pointing to entries which were moved or removed. Lookups
+then return wrong entries or panic, the reported length disagrees with the
+content, and `heapless` 0.9.3 reads its storage out of bounds without a
+check in release builds, which is undefined behaviour reachable from safe
+code. Confined `retain` and `try_retain` run a second pass which keeps every
+entry while such a panic unwinds; it makes the map rebuild its table. The
+repair covers these two methods only: a wrapped map which is released and
+used directly has the upstream behaviour.
+
+One step of that unwinding is outside the control of this crate.
+`heapless::Vec::retain_mut`, on which `heapless::IndexMap::retain` and
+`heapless::LinearMap::retain` are built, has a guard which moves the entries
+not processed yet when a panic unwinds through it. In `heapless` 0.9.3 the
+guard reads through a pointer which it has just invalidated by borrowing the
+vector mutably. Miri reports this as undefined behaviour under its default
+Stacked Borrows aliasing model and accepts it under Tree Borrows; no
+miscompilation is known. It happens when a panic leaves entries to move: a
+panic of the predicate after an entry was removed, or of a destructor of a
+removed entry which is not the last one. The tests of this path are skipped
+by the default Miri run and executed with `-Zmiri-tree-borrows` instead.
 
 **Deserialization constructs first.** Generic serde `Deserialize` validates
 confinement only after constructing the inner collection `C`. Rejecting an
@@ -87,6 +131,23 @@ infallible `CollectionBase::push`; capacity-limited implementations need a
 fallible override. `prepare_entry` must provide native room before an
 infallible entry insertion is exposed. Incorrect custom length/growth,
 mutation or entry behavior can invalidate confinement guarantees.
+
+The length which an item adds must not depend on anything which can be
+changed while the item is in the collection: through interior mutability, or
+through a mutable reference to the item or to a map value. `iter_mut`,
+`get_mut`, `values_mut`, entries and mutable indexing hand such references
+out without a check. For a map whose entries add different lengths, `entry`
+gives out a vacant entry only when `MAX_ITEM_LEN` fits the room left, and
+`try_retain` with a lower bound counts each removal as `MAX_ITEM_LEN`, since
+neither of them knows the length of the entry. Both are exact for the
+built-in maps, where an entry adds one. Keys must implement `Eq`, `Ord` and
+`Hash` consistently and deterministically; the growth of a set or a map is
+predicted with a lookup before the item is added.
+
+When `CollectionMap::retain` of a map unwinds from a panic, confined `retain`
+and `try_retain` call it once more with a predicate which keeps every entry,
+to let the map repair itself. A custom map must accept this call in the state
+which its own `retain` leaves behind: a second panic there aborts the process.
 
 ## Feature and platform boundaries
 

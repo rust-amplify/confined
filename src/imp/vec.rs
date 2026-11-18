@@ -96,6 +96,22 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<Vec<T>, MIN_LEN, MA
 impl<T, A: Allocator, const MAX_LEN: usize> Confined<Vec<T, A>, ZERO, MAX_LEN> {
     /// Removes the last element from a vector and returns it, or [`None`] if it
     /// is empty.
+    ///
+    /// ```
+    /// # use confined::Confined;
+    /// let mut vec = Confined::<Vec<u8>, 0, 3>::try_from(vec![1, 2]).unwrap();
+    /// assert_eq!(vec.pop(), Some(2));
+    /// ```
+    ///
+    /// A vector with a lower bound has no such method, so the call fails to
+    /// compile. Such a vector is shortened with `remove`, which checks the
+    /// bound:
+    ///
+    /// ```compile_fail,E0596
+    /// # use confined::Confined;
+    /// let mut vec = Confined::<Vec<u8>, 1, 3>::try_from(vec![1, 2]).unwrap();
+    /// assert_eq!(vec.pop(), Some(2));
+    /// ```
     #[inline]
     pub fn pop(&mut self) -> Option<T> {
         self.0.pop()
@@ -106,9 +122,9 @@ impl<T, A: Allocator, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<Vec<T, A>, MIN_LEN, MAX_LEN>
 {
     /// Removes an element from the vector at a given index. Errors if the index
-    /// exceeds the number of elements in the vector, of if the new vector
-    /// length will be less than the confinement requirement. Returns the
-    /// removed element otherwise.
+    /// is outside of the vector, or if the new vector length will be less
+    /// than the confinement requirement; the index is checked first. Returns
+    /// the removed element otherwise.
     pub fn remove(&mut self, index: usize) -> Result<T, Error> {
         self.check_boundary(index)?;
         self.check_undersize()?;

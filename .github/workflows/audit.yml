@@ -51,3 +51,11 @@ jobs:
         run: cargo +nightly miri test --locked --lib --tests --no-default-features --features heapless,serde,hex
       - name: Run all-feature tests under Miri
         run: cargo +nightly miri test --locked --all-features
+      # `heapless` 0.9.3 breaks Stacked Borrows inside `Vec::retain_mut` when a
+      # panic unwinds through it, before `confined` gets the control back. The
+      # tests of that path are ignored by the runs above and executed here
+      # with Tree Borrows; see SECURITY.md.
+      - name: Run panic-safety tests ignored above under Miri with Tree Borrows
+        env:
+          MIRIFLAGS: -Zmiri-tree-borrows
+        run: cargo +nightly miri test --locked --all-features --test panic_safety -- --ignored

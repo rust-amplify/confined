@@ -24,6 +24,7 @@ use core::ops::{Index, IndexMut};
 use amplify_num::u24;
 use collections::{Collection, CollectionAlloc, CollectionBase, CollectionCapacity, CollectionMap};
 
+use super::base::retain_unwind_safe;
 use super::{Confined, Error, ItemLen, U8MAX, U16MAX, U24MAX, U32MAX, ZERO};
 
 impl<C, const MAX_LEN: usize> Confined<C, ZERO, MAX_LEN>
@@ -31,6 +32,26 @@ where
     C: ItemLen,
 {
     /// Removes all elements from the confined collection.
+    ///
+    /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
+    /// # use confined::Confined;
+    /// let mut vec = Confined::<Vec<u8>, 0, 3>::try_from(vec![1, 2]).unwrap();
+    /// vec.clear();
+    /// assert!(vec.is_empty());
+    /// # }
+    /// ```
+    ///
+    /// A collection with a lower bound can't be emptied, so it has no such
+    /// method and the call fails to compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use confined::Confined;
+    /// let mut vec = Confined::<Vec<u8>, 1, 3>::try_from(vec![1, 2]).unwrap();
+    /// vec.clear();
+    /// assert!(vec.is_empty());
+    /// ```
     pub fn clear(&mut self) {
         CollectionBase::clear(&mut self.0)
     }
@@ -41,6 +62,24 @@ where
     C: ItemLen + Default,
 {
     /// Constructs a new confinement containing no elements.
+    ///
+    /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
+    /// # use confined::Confined;
+    /// let vec = Confined::<Vec<u8>, 0, 3>::new();
+    /// assert!(vec.is_empty());
+    /// # }
+    /// ```
+    ///
+    /// An empty collection doesn't fit a confinement with a lower bound, so
+    /// such a type has no such function and the call fails to compile:
+    ///
+    /// ```compile_fail,E0599
+    /// # use confined::Confined;
+    /// let vec = Confined::<Vec<u8>, 1, 3>::new();
+    /// assert!(vec.is_empty());
+    /// ```
     pub fn new() -> Self {
         Self::default()
     }
@@ -52,6 +91,15 @@ where
 {
     /// Constructs a new confinement containing no elements, but with a
     /// pre-allocated storage for the `capacity` of elements.
+    ///
+    /// The storage is never allocated for more than `MAX_LEN` elements,
+    /// whatever `capacity` is asked for.
+    ///
+    /// # Panics
+    ///
+    /// Like the wrapped collection, panics or aborts the process if the
+    /// storage can't be allocated. Use [`Self::try_with_capacity`] to get an
+    /// error instead.
     pub fn with_capacity(capacity: usize) -> Self {
         Self::from_checked(C::with_capacity(capacity.min(MAX_LEN)))
     }
@@ -169,6 +217,13 @@ where
     /// let s = Confined::<String, 1, 2>::with('a');
     /// assert_eq!(s.as_str(), "a");
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the wrapped collection refuses the item: a fixed-capacity
+    /// collection which has no storage, or a collection which fails to
+    /// allocate it. The collections without a fallible allocation, such as
+    /// trees and linked lists, abort the process in the latter case.
     pub fn with(elem: C::Item) -> Self {
         const {
             assert!(
@@ -297,7 +352,9 @@ where
     /// ```
     pub fn last(&self) -> &C::Item {
         const { assert!(MIN_LEN > 0, "the confinement may be empty") };
-        self.0.index(self.len() - 1)
+        // The position is counted in items, which differs from the confined
+        // length when an item adds more than one to it.
+        self.0.index(self.0.item_count() - 1)
     }
 }
 
@@ -358,7 +415,7 @@ where
     /// ```
     pub fn last_mut(&mut self) -> &mut C::Item {
         const { assert!(MIN_LEN > 0, "the confinement may be empty") };
-        let last = self.len() - 1;
+        let last = self.0.item_count() - 1;
         self.0.index_mut(last)
     }
 }
@@ -491,8 +548,37 @@ impl<C: CollectionMap, const MAX_LEN: usize> Confined<C, ZERO, MAX_LEN> {
     /// In other words, remove all pairs `(k, v)` for which `f(&k, &mut v)`
     /// returns `false`. The elements are visited in unsorted (and
     /// unspecified) order.
+    ///
+    /// ```
+    /// # #[cfg(feature = "alloc")]
+    /// # {
+    /// # use std::collections::BTreeMap;
+    /// # use confined::Confined;
+    /// let mut map = Confined::<BTreeMap<u8, u8>, 0, 3>::try_from_iter([(1, 1), (2, 2)]).unwrap();
+    /// map.retain(|key, _| *key > 1);
+    /// assert_eq!(map.len(), 1);
+    /// # }
+    /// ```
+    ///
+    /// A map with a lower bound has no such method, so the call fails to
+    /// compile. Such a map is filtered with [`Confined::try_retain`], which
+    /// checks the bound:
+    ///
+    /// ```compile_fail,E0596
+    /// # use std::collections::BTreeMap;
+    /// # use confined::Confined;
+    /// let mut map = Confined::<BTreeMap<u8, u8>, 1, 3>::try_from_iter([(1, 1), (2, 2)]).unwrap();
+    /// map.retain(|key, _| *key > 1);
+    /// assert_eq!(map.len(), 1);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// A panic of the predicate, or of a destructor of a removed element, is
+    /// propagated. The elements removed before it stay removed, and the map
+    /// remains usable.
     pub fn retain(&mut self, f: impl FnMut(&C::Key, &mut C::Value) -> bool) {
-        self.0.retain(f)
+        retain_unwind_safe(&mut self.0, f)
     }
 }
 
@@ -542,5 +628,179 @@ where
     /// ```
     pub fn with_key_value(key: C::Key, value: C::Value) -> Self {
         Self::with((key, value))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A collection which only reports a length. It reaches the limits of
+    /// the integer types without allocating gigabytes, and lets the tests
+    /// build a confinement which is already broken.
+    #[derive(Default, Debug)]
+    struct Reported(usize);
+
+    impl CollectionBase for Reported {
+        type Item = ();
+
+        fn item_count(&self) -> usize {
+            self.0
+        }
+
+        fn push(&mut self, (): ()) {
+            self.0 += 1;
+        }
+
+        fn clear(&mut self) {
+            self.0 = 0;
+        }
+    }
+
+    impl ItemLen for Reported {}
+
+    /// A collection which refuses every item.
+    #[derive(Default, Debug)]
+    struct Full;
+
+    impl CollectionBase for Full {
+        type Item = u8;
+
+        fn item_count(&self) -> usize {
+            0
+        }
+
+        fn push(&mut self, _: u8) {
+            unreachable!("the collection is full")
+        }
+
+        fn clear(&mut self) {}
+    }
+
+    impl ItemLen for Full {
+        fn try_push(&mut self, item: u8) -> Result<(), u8> {
+            Err(item)
+        }
+    }
+
+    mod len_u8 {
+        use super::*;
+
+        #[test]
+        fn largest_length_is_returned() {
+            let col = Confined::<Reported, 0, 255>(Reported(255));
+            assert_eq!(col.len_u8(), u8::MAX);
+        }
+
+        #[test]
+        fn zero_length_is_returned() {
+            let col = Confined::<Reported, 0, 255>(Reported(0));
+            assert_eq!(col.len_u8(), 0);
+        }
+
+        #[test]
+        #[should_panic(expected = "confinement broken")]
+        fn length_above_the_integer_is_never_truncated() {
+            let col = Confined::<Reported, 0, 255>(Reported(256));
+            col.len_u8();
+        }
+    }
+
+    mod len_u16 {
+        use super::*;
+
+        #[test]
+        fn largest_length_is_returned() {
+            let col = Confined::<Reported, 0, 65_535>(Reported(65_535));
+            assert_eq!(col.len_u16(), u16::MAX);
+        }
+
+        #[test]
+        #[should_panic(expected = "confinement broken")]
+        fn length_above_the_integer_is_never_truncated() {
+            let col = Confined::<Reported, 0, 65_535>(Reported(65_536));
+            col.len_u16();
+        }
+    }
+
+    mod len_u24 {
+        use super::*;
+
+        #[test]
+        fn largest_length_is_returned() {
+            let col = Confined::<Reported, 0, U24MAX>(Reported(U24MAX));
+            assert_eq!(col.len_u24(), u24::MAX);
+        }
+
+        #[test]
+        #[should_panic(expected = "confinement broken")]
+        fn length_above_the_integer_is_never_truncated() {
+            let col = Confined::<Reported, 0, U24MAX>(Reported(U24MAX + 1));
+            col.len_u24();
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        #[test]
+        #[should_panic(expected = "confinement broken")]
+        fn length_above_four_bytes_is_never_truncated() {
+            // The low three bytes of the length are zero.
+            let col = Confined::<Reported, 0, U24MAX>(Reported(1 << 32));
+            col.len_u24();
+        }
+    }
+
+    mod len_u32 {
+        use super::*;
+
+        #[test]
+        fn largest_length_is_returned() {
+            let col = Confined::<Reported, 0, U32MAX>(Reported(U32MAX));
+            assert_eq!(usize::try_from(col.len_u32()), Ok(U32MAX));
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        #[test]
+        #[should_panic(expected = "confinement broken")]
+        fn length_above_the_integer_is_never_truncated() {
+            let col = Confined::<Reported, 0, U32MAX>(Reported(U32MAX + 1));
+            col.len_u32();
+        }
+    }
+
+    mod with {
+        use super::*;
+
+        #[test]
+        fn single_item_is_stored() {
+            let col = Confined::<Reported, 1, 1>::with(());
+            assert_eq!(col.len(), 1);
+        }
+
+        #[test]
+        #[should_panic(expected = "collection has no capacity")]
+        fn refused_item_is_a_panic() {
+            let _ = Confined::<Full, 0, 1>::with(7);
+        }
+    }
+
+    mod constructors {
+        use super::*;
+
+        #[test]
+        fn new_is_empty() {
+            assert!(Confined::<Reported, 0, 1>::new().is_empty());
+        }
+
+        #[test]
+        fn default_is_empty() {
+            assert!(Confined::<Reported, 0, 1>::default().is_empty());
+        }
+
+        #[test]
+        fn clear_removes_everything() {
+            let mut col = Confined::<Reported, 0, 3>(Reported(3));
+            col.clear();
+            assert!(col.is_empty());
+        }
     }
 }

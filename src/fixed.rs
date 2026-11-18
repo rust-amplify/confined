@@ -108,6 +108,22 @@ impl<T, const N: usize, L: LenType, const MIN: usize, const MAX: usize>
 
 impl<T, const N: usize, L: LenType, const MAX: usize> Confined<Vec<T, N, L>, 0, MAX> {
     /// Removes the last item, or returns `None` if empty.
+    ///
+    /// ```
+    /// # use confined::HeaplessVec;
+    /// let mut vec = HeaplessVec::<u8, 4, 0, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(vec.pop(), Some(2));
+    /// ```
+    ///
+    /// A vector with a lower bound has no such method, so the call fails to
+    /// compile. Such a vector is shortened with `remove`, which checks the
+    /// bound:
+    ///
+    /// ```compile_fail,E0596
+    /// # use confined::HeaplessVec;
+    /// let mut vec = HeaplessVec::<u8, 4, 1, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(vec.pop(), Some(2));
+    /// ```
     pub fn pop(&mut self) -> Option<T> {
         self.0.pop()
     }
@@ -115,6 +131,21 @@ impl<T, const N: usize, L: LenType, const MAX: usize> Confined<Vec<T, N, L>, 0, 
 
 impl<const N: usize, L: LenType, const MAX: usize> Confined<String<N, L>, 0, MAX> {
     /// Removes the last character, or returns `None` if empty.
+    ///
+    /// ```
+    /// # use confined::HeaplessString;
+    /// let mut string = HeaplessString::<8, 0, 4>::try_from_iter(['a', 'b']).unwrap();
+    /// assert_eq!(string.pop(), Some('b'));
+    /// ```
+    ///
+    /// A string with a lower bound has no such method, so the call fails to
+    /// compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use confined::HeaplessString;
+    /// let mut string = HeaplessString::<8, 1, 4>::try_from_iter(['a', 'b']).unwrap();
+    /// assert_eq!(string.pop(), Some('b'));
+    /// ```
     pub fn pop(&mut self) -> Option<char> {
         self.0.pop()
     }
@@ -137,11 +168,41 @@ impl<T, const N: usize, const MIN: usize, const MAX: usize> Confined<Deque<T, N>
 
 impl<T, const N: usize, const MAX: usize> Confined<Deque<T, N>, 0, MAX> {
     /// Removes the first item, or returns `None` if empty.
+    ///
+    /// ```
+    /// # use confined::HeaplessDeque;
+    /// let mut deque = HeaplessDeque::<u8, 4, 0, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.pop_front(), Some(1));
+    /// ```
+    ///
+    /// A deque with a lower bound has no such method, so the call fails to
+    /// compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use confined::HeaplessDeque;
+    /// let mut deque = HeaplessDeque::<u8, 4, 1, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.pop_front(), Some(1));
+    /// ```
     pub fn pop_front(&mut self) -> Option<T> {
         self.0.pop_front()
     }
 
     /// Removes the last item, or returns `None` if empty.
+    ///
+    /// ```
+    /// # use confined::HeaplessDeque;
+    /// let mut deque = HeaplessDeque::<u8, 4, 0, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.pop_back(), Some(2));
+    /// ```
+    ///
+    /// A deque with a lower bound has no such method, so the call fails to
+    /// compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use confined::HeaplessDeque;
+    /// let mut deque = HeaplessDeque::<u8, 4, 1, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(deque.pop_back(), Some(2));
+    /// ```
     pub fn pop_back(&mut self) -> Option<T> {
         self.0.pop_back()
     }
@@ -149,6 +210,23 @@ impl<T, const N: usize, const MAX: usize> Confined<Deque<T, N>, 0, MAX> {
 
 impl<T: Ord, K: Kind, const N: usize, const MAX: usize> Confined<BinaryHeap<T, K, N>, 0, MAX> {
     /// Removes the highest-priority item, or returns `None` if empty.
+    ///
+    /// ```
+    /// # use confined::HeaplessHeap;
+    /// # use confined::heapless::binary_heap::Max;
+    /// let mut heap = HeaplessHeap::<u8, Max, 4, 0, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(heap.pop(), Some(2));
+    /// ```
+    ///
+    /// A heap with a lower bound has no such method, so the call fails to
+    /// compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use confined::HeaplessHeap;
+    /// # use confined::heapless::binary_heap::Max;
+    /// let mut heap = HeaplessHeap::<u8, Max, 4, 1, 3>::try_from_iter([1, 2]).unwrap();
+    /// assert_eq!(heap.pop(), Some(2));
+    /// ```
     pub fn pop(&mut self) -> Option<T> {
         self.0.pop()
     }

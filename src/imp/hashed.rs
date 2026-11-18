@@ -70,18 +70,26 @@ impl<'a, K: Hash + Eq, V, S: BuildHasher> Entry<'a, HashMap<K, V, S>> {
 impl<T: Hash + Eq, S: BuildHasher, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<HashSet<T, S>, MIN_LEN, MAX_LEN>
 {
-    /// Removes an element from the set. Errors if the index exceeds the number
-    /// of elements in the set, of if the new collection length will be less
-    /// than the confinement requirement. Returns if the element was present
-    /// in the set.
+    /// Removes an element from the set, returning whether it was present.
+    /// Removing an element which is not in the set is not an error, even at
+    /// the lower bound.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the element is present and the set has no more elements than
+    /// the lower bound of the confinement. The set is left unchanged.
     pub fn remove(&mut self, elem: &T) -> Result<bool, Error> {
         self.remove_from_set(elem, |set, elem| set.remove(elem))
     }
 
-    /// Removes an element from the set. Errors if the index exceeds the number
-    /// of elements in the set, of if the new collection length will be less
-    /// than the confinement requirement. Returns the removed element
-    /// otherwise.
+    /// Removes an element from the set and returns it, or `None` if it was
+    /// not present. Taking an element which is not in the set is not an
+    /// error, even at the lower bound.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the element is present and the set has no more elements than
+    /// the lower bound of the confinement. The set is left unchanged.
     pub fn take(&mut self, elem: &T) -> Result<Option<T>, Error> {
         self.take_from_set(elem, |set, elem| set.take(elem))
     }
@@ -89,10 +97,14 @@ impl<T: Hash + Eq, S: BuildHasher, const MIN_LEN: usize, const MAX_LEN: usize>
 impl<K: Hash + Eq, V, S: BuildHasher, const MIN_LEN: usize, const MAX_LEN: usize>
     Confined<HashMap<K, V, S>, MIN_LEN, MAX_LEN>
 {
-    /// Removes an element from the map. Errors if the index exceeds the number
-    /// of elements in the map, of if the new collection length will be less
-    /// than the confinement requirement. Returns the removed value
-    /// otherwise.
+    /// Removes a key from the map and returns its value, or `None` if the key
+    /// was not present. Removing a key which is not in the map is not an
+    /// error, even at the lower bound.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the key is present and the map has no more entries than the
+    /// lower bound of the confinement. The map is left unchanged.
     pub fn remove(&mut self, key: &K) -> Result<Option<V>, Error> {
         self.remove_from_map(key, |map, key| map.remove(key))
     }
@@ -165,6 +177,23 @@ impl<K: Hash + Eq, V, S: BuildHasher, const MAX_LEN: usize>
 {
     /// Clears the map, returning all key-value pairs as an iterator. Keeps the
     /// allocated memory for reuse.
+    ///
+    /// ```
+    /// # use std::collections::HashMap;
+    /// # use confined::Confined;
+    /// let mut map = Confined::<HashMap<u8, u8>, 0, 3>::with_key_value(1, 10);
+    /// assert_eq!(map.drain().count(), 1);
+    /// ```
+    ///
+    /// A map with a lower bound can't be emptied, so it has no such method
+    /// and the call fails to compile:
+    ///
+    /// ```compile_fail,E0596
+    /// # use std::collections::HashMap;
+    /// # use confined::Confined;
+    /// let mut map = Confined::<HashMap<u8, u8>, 1, 3>::with_key_value(1, 10);
+    /// assert_eq!(map.drain().count(), 1);
+    /// ```
     pub fn drain(&mut self) -> hash_map::Drain<'_, K, V> {
         self.0.drain()
     }

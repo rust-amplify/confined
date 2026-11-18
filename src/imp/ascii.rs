@@ -86,6 +86,24 @@ impl<const MIN_LEN: usize, const MAX_LEN: usize> FromStr
 impl<const MAX_LEN: usize> Confined<AsciiString, ZERO, MAX_LEN> {
     /// Removes the last character from a string and returns it, or [`None`] if
     /// it is empty.
+    ///
+    /// ```
+    /// # use confined::Confined;
+    /// # use confined::ascii::{AsciiChar, AsciiString};
+    /// let mut string: Confined<AsciiString, 0, 3> = "ab".parse().unwrap();
+    /// assert_eq!(string.pop(), Some(AsciiChar::b));
+    /// ```
+    ///
+    /// A string with a lower bound has no such method, so the call fails to
+    /// compile. Such a string is shortened with `remove`, which checks the
+    /// bound:
+    ///
+    /// ```compile_fail,E0596
+    /// # use confined::Confined;
+    /// # use confined::ascii::{AsciiChar, AsciiString};
+    /// let mut string: Confined<AsciiString, 1, 3> = "ab".parse().unwrap();
+    /// assert_eq!(string.pop(), Some(AsciiChar::b));
+    /// ```
     pub fn pop(&mut self) -> Option<AsciiChar> {
         self.0.pop()
     }

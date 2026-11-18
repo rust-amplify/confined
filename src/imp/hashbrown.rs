@@ -33,8 +33,9 @@ impl<T: Eq + Hash, S: BuildHasher, A: Allocator> ItemLen for HashSet<T, S, A> {
     }
 
     fn try_push(&mut self, item: T) -> Result<(), T> {
+        // The native `insert` reserves room before it looks the item up, so
+        // it is not called for an item which the set already holds.
         if self.contains(&item) {
-            collections::CollectionBase::push(self, item);
             Ok(())
         } else {
             CollectionCapacity::try_push(self, item)
@@ -48,8 +49,10 @@ impl<K: Eq + Hash, V, S: BuildHasher, A: Allocator> ItemLen for HashMap<K, V, S,
     }
 
     fn try_push(&mut self, item: (K, V)) -> Result<(), (K, V)> {
-        if self.contains_key(&item.0) {
-            collections::CollectionBase::push(self, item);
+        // The native `insert` reserves room before it looks the key up, so
+        // the value of an existing key is replaced in place.
+        if let Some(value) = self.get_mut(&item.0) {
+            *value = item.1;
             Ok(())
         } else {
             CollectionCapacity::try_push(self, item)

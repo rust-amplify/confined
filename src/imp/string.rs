@@ -71,6 +71,22 @@ impl<const MIN_LEN: usize, const MAX_LEN: usize> FromStr for Confined<String, MI
 impl<const MAX_LEN: usize> Confined<String, ZERO, MAX_LEN> {
     /// Removes the last character from a string and returns it, or [`None`] if
     /// it is empty.
+    ///
+    /// ```
+    /// # use confined::Confined;
+    /// let mut string: Confined<String, 0, 3> = "ab".parse().unwrap();
+    /// assert_eq!(string.pop(), Some('b'));
+    /// ```
+    ///
+    /// A string with a lower bound has no such method, so the call fails to
+    /// compile. Such a string is shortened with `remove`, which checks the
+    /// bound:
+    ///
+    /// ```compile_fail,E0596
+    /// # use confined::Confined;
+    /// let mut string: Confined<String, 1, 3> = "ab".parse().unwrap();
+    /// assert_eq!(string.pop(), Some('b'));
+    /// ```
     pub fn pop(&mut self) -> Option<char> {
         self.0.pop()
     }

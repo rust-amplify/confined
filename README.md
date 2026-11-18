@@ -391,9 +391,9 @@ Ok::<(), confined::Error>(())
 has `key`, `or_insert`, `or_insert_with`, `or_default` and `and_modify` for
 maps implementing `collections::CollectionEntry`, including your own maps
 whose entry types implement `collections::MapEntry`. `or_insert_with_key`
-is additionally available for the built-in `BTreeMap`, `HashMap` and
-`IndexMap`. Nothing on `Entry` removes the entry: removal goes through
-`remove` on the confined map, which checks the lower limit.
+is additionally available for the built-in `BTreeMap`, `HashMap`, `IndexMap`
+and `hashbrown::HashMap`. Nothing on `Entry` removes the entry: removal goes
+through `remove` on the confined map, which checks the lower limit.
 
 `CollectionMap` does not require an entry API. Its generic `insert`, `get_mut`,
 `values_mut` and retention methods also work for entry-less maps. Entry
@@ -530,7 +530,10 @@ followed by a collection suffix, for example `TinyVec<T>` or
 related to the `smallvec` crate. Every prefix is available for both `List`
 and `Heap`, including `LargeList`, `LargeHeap`, `NonEmptyList` and
 `NonEmptyHeap`. Hash and index aliases keep the default hasher; wrap a
-custom-hasher collection directly in `Confined` instead.
+custom-hasher collection directly in `Confined` instead. The `hashbrown`
+feature adds `TinyHashbrownSet`, `SmallHashbrownSet`, `ConfinedHashbrownSet`
+and the same three aliases ending with `HashbrownMap`; they take the hasher
+and the allocator as their last parameters.
 
 ```rust
 # #[cfg(feature = "alloc")]
@@ -622,7 +625,7 @@ assert_eq!(format!("{blob:X}"), "DEADBEEF");
 assert_eq!(Confined::<Vec<u8>, 0, 4>::from_hex("deadbeef"), Ok(blob));
 assert_eq!(
     Confined::<Vec<u8>, 0, 3>::from_hex("deadbeef"),
-    Err(hex::Error::InvalidLength(3, 4)) // the limit and the actual length
+    Err(hex::Error::InvalidLength(3, 4)) // the limit and the actual length, in bytes
 );
 
 # }
@@ -760,6 +763,18 @@ consistent. UTF-8 strings override the character-counting upstream
 `item_count`: confinement uses `CollectionBytes` for O(1) byte length and
 counts each inserted character by its encoded byte length.
 
+The length which an item adds must not change while the item is in the
+collection: neither through interior mutability, nor through a mutable
+reference to the item or to a map value, because `iter_mut`, `get_mut`,
+`values_mut`, entries and mutable indexing hand such references out without a
+check. A map whose `retain` unwinds from a panic gets one more `retain` call,
+which keeps every entry and must not panic.
+
+When the entries of a map add different lengths, `entry()` gives out a vacant
+entry only if `MAX_ITEM_LEN` fits the room left, and `try_retain` with a
+lower bound counts each removal as `MAX_ITEM_LEN`: neither of them knows the
+length of the entry in advance.
+
 The generic API is available with `ItemLen` and the relevant operation's
 additional bounds (for example `CollectionMap`, `Index` or `Clone`):
 
@@ -790,7 +805,9 @@ additional bounds (for example `CollectionMap`, `Index` or `Clone`):
 - **Duplicates do not consume length.** `push` and `extend` on sets and maps
   accept duplicate items or existing keys even at `MAX_LEN`. Likewise,
   replacing a value with `insert` or accessing an occupied `entry` does not
-  require room for another entry.
+  require room for another entry. Such operations do not ask a hash table for
+  room either: they never reallocate it and work when the allocator refuses.
+  `insert` replaces the value in place and keeps the stored key.
 - **Removing something absent is not an error.** `remove` and `take` on maps and
   sets return `Ok(None)` or `Ok(false)`, even at the minimum size.
 - **`String::remove` needs a character boundary.** An index inside a multi-byte
@@ -804,15 +821,25 @@ additional bounds (for example `CollectionMap`, `Index` or `Clone`):
   `BTreeSet`'s own `first()` and `last()` are unaffected because it is not
   indexable by position.
 - **`IndexMap` and `IndexSet` removal preserves order.** It uses the `shift_*`
-  operations.
+  operations of `indexmap`. The fixed-capacity `heapless::IndexMap` and
+  `heapless::IndexSet` have no such operation: their `remove` moves the last
+  entry into the place of the removed one.
 - **`try_retain` stops at the minimum.** It removes rejected entries in
   iteration order while the map stays above `MIN_LEN`. If the predicate rejects
   more than that, the remaining ones are kept and the call returns `Undersize`
   with the length the map would have had. The predicate is still called once
   for every entry.
+- **Retention survives a panic.** If the predicate of `retain` / `try_retain`
+  or a destructor of a removed entry panics, the entries removed so far stay
+  removed and the map stays consistent. This includes `IndexMap` and
+  `heapless::IndexMap`, whose own `retain` leaves a stale index table in this
+  case; see [SECURITY.md](./SECURITY.md).
 - **`BTreeMap::append` needs a source without a minimum.** It empties the other
   map, so that map must have `MIN_LEN = 0`. Keys present in both maps do not
   count towards `MAX_LEN`. If the result does not fit, neither map is changed.
+  The entries are moved one by one: if a comparison or a destructor panics,
+  the moved entries stay in the target map and the rest stays in the source,
+  and neither map leaves its limits.
 - **`BTreeMap::split_off` clones before mutation.** It requires `K: Clone` and
   `V: Clone`, and returns cloned entries. This avoids Rust 1.100's panic-unsafe
   native split: comparisons and cloning finish before removing originals.
@@ -858,8 +885,11 @@ additional bounds (for example `CollectionMap`, `Index` or `Clone`):
 ## Repository layout
 
 ```text
-src/                  wrapper, traits, aliases, macros and collection integrations
-tests/                API, allocator, collection and confinement regressions
+src/                  wrapper, traits, aliases, macros and collection integrations,
+                      with unit tests of the internal checks
+tests/                one file per collection and per concern (shared API, traits,
+                      aliases, macros, custom collections, panic safety, capacity,
+                      out of memory), plus allocator and confinement regressions
 examples/cortex_m.rs  allocator-free Cortex-M startup/link smoke example
 .github/workflows/    build and validation workflows
 ```

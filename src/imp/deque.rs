@@ -166,8 +166,8 @@ impl<T, const MIN_LEN: usize, const MAX_LEN: usize> Confined<VecDeque<T>, MIN_LE
     }
 
     /// Removes an element from the deque at a given index. Errors if the index
-    /// exceeds the number of elements in the deque, of if the new deque
-    /// length will be less than the confinement requirement. Returns the
+    /// is outside of the deque, or if the new deque length will be less than
+    /// the confinement requirement; the index is checked first. Returns the
     /// removed element otherwise.
     pub fn remove(&mut self, index: usize) -> Result<T, Error> {
         self.check_boundary(index)?;

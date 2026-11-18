@@ -79,6 +79,38 @@ and `cargo test`, but not by `cargo check`.
   `usize::MAX` on narrower targets; `amplify_num` conversions do not use
   truncating intermediate casts.
 - Unresolved documentation links to `u24::MAX` and `mem::forget`.
+- `retain` and `try_retain` left an `indexmap::IndexMap` or a
+  `heapless::IndexMap` with a stale index table when the predicate, or a
+  destructor of a removed entry, panicked: upstream rebuilds the table only at
+  the end of a retention pass. Lookups in such a map returned wrong entries
+  or panicked, its length disagreed with its content, and `heapless` read its
+  storage out of bounds without a check in release builds. The map is now
+  repaired while the panic unwinds. An aliasing violation of
+  `heapless::Vec::retain_mut` in the same situation, which Miri reports under
+  Stacked Borrows, is upstream and remains; see `SECURITY.md`.
+- `BTreeMap::append` could leave the map below `MIN_LEN` when a destructor of
+  a replaced value panicked: the native `append` of Rust 1.100 loses the
+  entry of the shared key in this case.
+- `insert` of an existing key into a `HashMap`, an `IndexMap` or a
+  `hashbrown::HashMap`, and `push` / `extend` of a present item or key into a
+  `hashbrown::HashSet` / `HashMap`, went through the native `insert`, which
+  reserves room before it looks the key up. A table without spare capacity
+  was reallocated although nothing was added, and the process was aborted
+  when the allocator refused, instead of the operation succeeding without any
+  allocation.
+- `BTreeMap::split_off` checked the bounds of the returned map for the number
+  of entries to split off, not for the map built from them. Keys whose `Eq`
+  disagrees with their `Ord` are merged while the map is built, so the result
+  could be below its `MIN_LEN`.
+- Generic `insert`, `entry` and `try_retain` counted every map entry as one,
+  whatever a custom `ItemLen` implementation reported. A map with entries of
+  different lengths could exceed `MAX_LEN` or fall below `MIN_LEN`.
+- `last()` and `last_mut()` used the confined length as the position of the
+  last item, which is wrong for a custom collection where an item adds more
+  than one to the length.
+- Documentation of `remove` / `take` of sets and maps described an index and
+  an error for an absent item; `into_keys` / `into_values` of `BTreeMap` and
+  `IndexMap` were documented to iterate in an arbitrary order.
 
 ### Added
 
@@ -124,8 +156,8 @@ and `cargo test`, but not by `cargo check`.
 - `Entry`, the type returned by `entry()` of a confined map, with the methods
   `key`, `or_insert`, `or_insert_with`, `or_default` and `and_modify` for any
   `CollectionEntry`, including custom maps using `MapEntry`. The additional
-  `or_insert_with_key` method remains specific to `BTreeMap`, `HashMap` and
-  `IndexMap`.
+  `or_insert_with_key` method remains specific to `BTreeMap`, `HashMap`,
+  `IndexMap` and `hashbrown::HashMap`.
 - `ItemLen` hooks: `confined_len` defaults to `item_count`; `item_len` and
   `MAX_ITEM_LEN` default to one. `item_growth` defaults to `item_len`, with
   zero growth for duplicate sets/maps. `try_push` defaults to infallible
@@ -147,6 +179,18 @@ and `cargo test`, but not by `cargo check`.
   `tests/collections.rs`. The examples of `README.md`, including allocator,
   list and heap usage, are run as documentation tests when all features are
   enabled.
+- Unit tests of the internal checks in `src/`, which also run without any
+  feature, and integration tests with one case per test: a file per
+  collection (`vec`, `deque`, `list`, `heap`, `string`, `ascii`, `bytes`,
+  `btree`, `hashed`, `indexed`, `fixed`), `tests/generic.rs` and
+  `tests/traits.rs` for the shared API, `tests/aliases.rs` and
+  `tests/constructor_macros.rs` for the aliases and the macros,
+  `tests/custom.rs` for custom `ItemLen` collections, `tests/panic_safety.rs`,
+  `tests/capacity.rs`, and `tests/oom.rs`, which runs the checked methods
+  with a global allocator refusing every request.
+- A Miri run with Tree Borrows for the panic-safety tests of the `heapless`
+  maps, which the default Miri run skips because of an aliasing violation
+  inside `heapless` itself.
 - Crate-level documentation.
 - CI matrices for no-allocation feature combinations and both Cortex-M
   `thumbv6m-none-eabi` and `thumbv7em-none-eabi`. Embedded checks cover
@@ -183,6 +227,14 @@ and `cargo test`, but not by `cargo check`.
   formatting also supports any allocator; `FromHex` requires `A: Default`.
 - `try_retain` never takes the map below `MIN_LEN`: it stops removing at the
   lower bound, keeps the remaining rejected elements and returns `Undersize`.
+  With a lower bound, a removal is counted as `ItemLen::MAX_ITEM_LEN`, which
+  is exact for the built-in maps.
+- `insert` replaces the value of an existing key in place, and `entry` gives
+  out a vacant entry only when `ItemLen::MAX_ITEM_LEN` fits the room left:
+  one for the built-in maps.
+- `BTreeMap::append` moves the entries one by one instead of calling the
+  native `append`. If a comparison or a destructor panics, the entries moved
+  so far stay in the map, and the rest stays in the source map.
 - `try_from_iter` and `from_iter_checked` stop at the first rejected growth.
   `Error::Oversize` does not report the iterator's total length. Duplicates
   can continue indefinitely without growing a set or map.

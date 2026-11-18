@@ -104,16 +104,16 @@ impl<K: Eq + Hash, V, S: BuildHasher, const MIN_LEN: usize, const MAX_LEN: usize
         self.remove_from_map(key, |map, key| map.shift_remove(key))
     }
 
-    /// Creates a consuming iterator visiting all the keys in arbitrary order.
-    /// The map cannot be used after calling this. The iterator element type is
-    /// `K`.
+    /// Creates a consuming iterator visiting all the keys in the order of
+    /// their insertion. The map cannot be used after calling this. The
+    /// iterator element type is `K`.
     pub fn into_keys(self) -> map::IntoKeys<K, V> {
         self.0.into_keys()
     }
 
-    /// Creates a consuming iterator visiting all the values in arbitrary order.
-    /// The map cannot be used after calling this. The iterator element type is
-    /// `V`.
+    /// Creates a consuming iterator visiting all the values in the order of
+    /// the insertion of their keys. The map cannot be used after calling
+    /// this. The iterator element type is `V`.
     pub fn into_values(self) -> map::IntoValues<K, V> {
         self.0.into_values()
     }
