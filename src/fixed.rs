@@ -192,7 +192,7 @@ pub type HeaplessVec<
     const MIN: usize = 0,
     const MAX: usize = { usize::MAX },
     L = usize,
-> = crate::Confined<Vec<T, CAP, L>, MIN, MAX>;
+> = Confined<Vec<T, CAP, L>, MIN, MAX>;
 
 /// A confined [`crate::heapless::String`] with a fixed byte capacity.
 pub type HeaplessString<
@@ -200,7 +200,7 @@ pub type HeaplessString<
     const MIN: usize = 0,
     const MAX: usize = { usize::MAX },
     L = usize,
-> = crate::Confined<String<CAP, L>, MIN, MAX>;
+> = Confined<String<CAP, L>, MIN, MAX>;
 
 /// A confined [`crate::heapless::Deque`] with a fixed storage capacity.
 pub type HeaplessDeque<
@@ -208,7 +208,7 @@ pub type HeaplessDeque<
     const CAP: usize,
     const MIN: usize = 0,
     const MAX: usize = { usize::MAX },
-> = crate::Confined<Deque<T, CAP>, MIN, MAX>;
+> = Confined<Deque<T, CAP>, MIN, MAX>;
 
 /// A confined [`crate::heapless::BinaryHeap`] with fixed storage capacity.
 pub type HeaplessHeap<
@@ -217,7 +217,7 @@ pub type HeaplessHeap<
     const CAP: usize,
     const MIN: usize = 0,
     const MAX: usize = { usize::MAX },
-> = crate::Confined<BinaryHeap<T, K, CAP>, MIN, MAX>;
+> = Confined<BinaryHeap<T, K, CAP>, MIN, MAX>;
 
 /// A confined [`crate::heapless::IndexMap`] with a fixed storage capacity.
 pub type HeaplessIndexMap<
@@ -227,7 +227,7 @@ pub type HeaplessIndexMap<
     const CAP: usize,
     const MIN: usize = 0,
     const MAX: usize = { usize::MAX },
-> = crate::Confined<IndexMap<K, V, S, CAP>, MIN, MAX>;
+> = Confined<IndexMap<K, V, S, CAP>, MIN, MAX>;
 
 /// A confined [`crate::heapless::IndexSet`] with a fixed storage capacity.
 pub type HeaplessIndexSet<
@@ -236,7 +236,7 @@ pub type HeaplessIndexSet<
     const CAP: usize,
     const MIN: usize = 0,
     const MAX: usize = { usize::MAX },
-> = crate::Confined<IndexSet<T, S, CAP>, MIN, MAX>;
+> = Confined<IndexSet<T, S, CAP>, MIN, MAX>;
 
 /// A confined [`crate::heapless::LinearMap`] with a fixed storage capacity.
 pub type HeaplessLinearMap<
@@ -245,4 +245,4 @@ pub type HeaplessLinearMap<
     const CAP: usize,
     const MIN: usize = 0,
     const MAX: usize = { usize::MAX },
-> = crate::Confined<LinearMap<K, V, CAP>, MIN, MAX>;
+> = Confined<LinearMap<K, V, CAP>, MIN, MAX>;

@@ -1,4 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
+//
+// Written in 2022-2026 by Dr. Maxim Orlovsky <orlovsky@ubideco.org>
+//
+// Copyright 2022-2026 Laboratories for Ubiquitous and Deterministic Computing,
+// Institute for Distributed and Cognitive Computing (InDCS), Switzerland.
+// All rights reserved.
+//
+// Copyright (C) 2022-2026 Dr Maxim Orlovsky.
+// All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at <http://www.apache.org/licenses/LICENSE-2.0>
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
 
 //! Link-only bare-metal smoke test; no board-specific startup or heap required.
 
@@ -30,7 +49,8 @@ fn main() {
     exercise();
 }
 
-// The link smoke command explicitly selects this unique symbol as its entry.
+// SAFETY: This standalone bare-metal link smoke binary defines `_start` once as
+// the unique entry symbol selected by `-C link-arg=-e_start`.
 #[cfg(target_os = "none")]
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {

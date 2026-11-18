@@ -12,20 +12,30 @@ on:
       - develop
       - 'v[0-9]+.*'
 
+# Validation jobs only read the repository. Actions are pinned to full commit
+# hashes maintained via Dependabot (see `.github/dependabot.yml`).
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   default:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check --workspace
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+      - name: Check default features
+        run: cargo check --workspace --locked
       - name: All-feature tests and documentation examples
-        run: cargo test --all-features
+        run: cargo test --workspace --locked --all-features
   no-alloc:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -39,29 +49,50 @@ jobs:
           - serde,hex
           - heapless,serde,hex
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
       - name: Check without allocation
-        run: cargo check --workspace --lib --no-default-features --features "${{ matrix.features }}"
+        run: cargo check --workspace --locked --lib --no-default-features --features "${{ matrix.features }}"
       - name: Test without allocation features
-        run: cargo test --workspace --lib --tests --no-default-features --features "${{ matrix.features }}"
+        run: cargo test --workspace --locked --lib --tests --no-default-features --features "${{ matrix.features }}"
       - name: Reduced-feature documentation examples
-        run: cargo test --doc --no-default-features --features "${{ matrix.features }}"
+        run: cargo test --locked --doc --no-default-features --features "${{ matrix.features }}"
   features:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         feature: [ std, alloc, hex, ascii, indexmap, hashbrown, heapless, serde, ascii-serde ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Feature ${{matrix.feature}}
-        run: cargo test --workspace --no-default-features --features=${{matrix.feature}}
-      - name: Feature ${{matrix.feature}}
-        run: cargo check --workspace --features=${{matrix.feature}}
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+      - name: Test feature ${{ matrix.feature }}
+        run: cargo test --workspace --locked --no-default-features --features=${{ matrix.feature }}
+      - name: Check feature ${{ matrix.feature }} with defaults
+        run: cargo check --workspace --locked --features=${{ matrix.feature }}
+  feature-powerset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-hack
+      # `default` and `all` are convenience aliases; pairwise depth bounds the
+      # 9-feature matrix while exercising every two-feature interaction.
+      - name: Pairwise feature combinations across all targets
+        run: cargo hack check --locked --all-targets --feature-powerset --depth 2 --exclude-features default,all
   cortex-m:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -81,36 +112,58 @@ jobs:
           - target: thumbv6m-none-eabi
             features: alloc,hex,indexmap,hashbrown,ascii,serde
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
       - name: Check bare-metal feature combination
-        run: cargo check --lib --target ${{ matrix.target }} --no-default-features --features "${{ matrix.features }}"
+        run: cargo check --locked --lib --target ${{ matrix.target }} --no-default-features --features "${{ matrix.features }}"
       - name: Link allocator-free startup (not hardware execution)
         if: matrix.features == 'heapless'
-        run: cargo rustc --example cortex_m --target ${{ matrix.target }} --no-default-features --features heapless -- -C panic=abort -C link-arg=-e_start
+        run: cargo rustc --locked --example cortex_m --target ${{ matrix.target }} --no-default-features --features heapless -- -C panic=abort -C link-arg=-e_start
+  wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - name: Check Wasm core-only
+        run: cargo check --locked --lib --target wasm32-unknown-unknown --no-default-features
+      - name: Check Wasm fixed-capacity
+        run: cargo check --locked --lib --target wasm32-unknown-unknown --no-default-features --features heapless,serde,hex
+      - name: Check Wasm no-std + alloc
+        run: cargo check --locked --lib --target wasm32-unknown-unknown --no-default-features --features alloc,hex,indexmap,hashbrown,ascii,serde
+      - name: Check Wasm all features
+        run: cargo check --locked --lib --target wasm32-unknown-unknown --all-features
   platforms:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-24.04-arm, ubuntu-latest, macos-15-intel, macos-latest, windows-11-arm, windows-latest ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Platform ${{matrix.os}}
-        run: cargo check --workspace --all-features # we skip test targets here to be sure that the main library can be built
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+      - name: Platform ${{ matrix.os }}
+        run: cargo check --workspace --locked --all-features # skip test targets so library build requirements are checked directly
   toolchains:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         toolchain: [ nightly, beta, stable, 1.100.0 ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
-          toolchain: ${{matrix.toolchain}}
-      - name: Toolchain ${{matrix.toolchain}}
-        run: cargo +${{matrix.toolchain}} check --workspace --all-targets --all-features
+          toolchain: ${{ matrix.toolchain }}
+      - name: Toolchain ${{ matrix.toolchain }}
+        run: cargo +${{ matrix.toolchain }} check --workspace --locked --all-targets --all-features

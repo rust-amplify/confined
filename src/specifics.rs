@@ -411,6 +411,8 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
     /// # }
     /// ```
     pub fn len_u16(&self) -> u16 {
+        // On 16-bit targets, `U16MAX` equals `usize::MAX`.
+        #[allow(clippy::absurd_extreme_comparisons)]
         const {
             assert!(
                 MAX_LEN <= U16MAX,
@@ -440,6 +442,8 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
     /// # }
     /// ```
     pub fn len_u24(&self) -> u24 {
+        // On 16-bit targets, `U24MAX` is capped at `usize::MAX`.
+        #[allow(clippy::absurd_extreme_comparisons)]
         const {
             assert!(
                 MAX_LEN <= U24MAX,
@@ -469,6 +473,8 @@ impl<C: ItemLen, const MIN_LEN: usize, const MAX_LEN: usize> Confined<C, MIN_LEN
     /// # }
     /// ```
     pub fn len_u32(&self) -> u32 {
+        // On 16-bit and 32-bit targets, `U32MAX` is capped at `usize::MAX`.
+        #[allow(clippy::absurd_extreme_comparisons)]
         const {
             assert!(
                 MAX_LEN <= U32MAX,

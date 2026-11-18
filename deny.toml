@@ -1,0 +1,34 @@
+# Configuration of `cargo deny --locked check`, which CI runs on pushes, pull
+# requests, release tags, and weekly scheduled audits (see `.github/workflows/audit.yml`).
+
+[graph]
+# Optional integrations are included in the audited dependency graph.
+all-features = true
+
+[advisories]
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = []
+
+[licenses]
+# `Unicode-3.0` is used by `unicode-ident`, pulled in transitively by `serde_derive`.
+allow = ["Apache-2.0", "MIT", "Unicode-3.0", "Zlib"]
+confidence-threshold = 0.93
+include-dev = true
+
+[bans]
+# Duplicate versions of shared dependencies (such as `allocator-api2` with
+# `hashbrown`) break type identity and are rejected explicitly.
+multiple-versions = "deny"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Reviewed exception (owner: @dr-orlovsky): `amplify_num` 0.6.0 is pinned to
+# commit `e359d07` until the modernized 0.6.0 release is published on crates.io;
+# review and remove this git source exception upon crates.io publication.
+allow-git = ["https://github.com/rust-amplify/amplify-num"]

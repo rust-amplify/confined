@@ -1,0 +1,13 @@
+version: 2
+
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Actions are pinned to full commit hashes in `.github/workflows`.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

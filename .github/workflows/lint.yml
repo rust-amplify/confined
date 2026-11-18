@@ -1,11 +1,19 @@
 name: Lints
 
 on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v[0-9]+.*'
   pull_request:
     branches:
       - master
       - develop
       - 'v[0-9]+.*'
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -13,28 +21,61 @@ env:
 jobs:
   fmt:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
+          toolchain: nightly
           components: rustfmt
-      - name: Formatting
+      - name: Check formatting
         run: cargo +nightly fmt --all -- --check
   clippy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
+          toolchain: stable
           components: clippy
-      - name: Formatting
-        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+          targets: thumbv6m-none-eabi,thumbv7em-none-eabi
+      - name: Clippy with all features
+        run: cargo +stable clippy --workspace --locked --all-features --all-targets -- -D warnings
+      - name: Clippy without default features
+        run: cargo +stable clippy --workspace --locked --no-default-features --all-targets -- -D warnings
+      - name: Clippy with `alloc` only
+        run: cargo +stable clippy --workspace --locked --no-default-features --features alloc --all-targets -- -D warnings
+      - name: Clippy with `heapless` only
+        run: cargo +stable clippy --workspace --locked --no-default-features --features heapless --all-targets -- -D warnings
+      - name: Clippy without allocation (`heapless,serde,hex`)
+        run: cargo +stable clippy --workspace --locked --no-default-features --features heapless,serde,hex --all-targets -- -D warnings
+      - name: Clippy on Cortex-M0 bare-metal example
+        run: cargo +stable clippy --locked --example cortex_m --target thumbv6m-none-eabi --no-default-features --features heapless -- -D warnings
+      - name: Clippy on Cortex-M4 bare-metal example
+        run: cargo +stable clippy --locked --example cortex_m --target thumbv7em-none-eabi --no-default-features --features heapless -- -D warnings
   doc:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
+          toolchain: stable
           components: rust-docs
-      - name: Formatting
-        run: cargo +nightly doc --workspace --all-features
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: nightly
+          components: rust-docs
+      - name: Build stable documentation (all features)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo +stable doc --workspace --locked --all-features --no-deps
+      - name: Build stable documentation (no default features)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo +stable doc --workspace --locked --no-default-features --no-deps
+      - name: Build docs.rs configuration
+        env:
+          RUSTDOCFLAGS: "--cfg docsrs -D warnings"
+        run: cargo +nightly doc --workspace --locked --all-features --no-deps

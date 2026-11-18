@@ -1,0 +1,53 @@
+name: Audit
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v[0-9]+.*'
+  pull_request:
+    branches:
+      - master
+      - develop
+      - 'v[0-9]+.*'
+  schedule:
+    # Weekly on Monday: advisories and crate status can change without commits.
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-deny
+      # Advisories, licenses, duplicate versions, and sources as configured in `deny.toml`.
+      - name: Check locked dependency policy
+        run: cargo deny --locked check
+  miri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: nightly
+          components: miri, rust-src
+      # `confined` forbids unsafe code; Miri checks executed paths in tests and
+      # dependencies for undefined behavior.
+      - name: Run allocator-free tests under Miri
+        run: cargo +nightly miri test --locked --lib --tests --no-default-features --features heapless,serde,hex
+      - name: Run all-feature tests under Miri
+        run: cargo +nightly miri test --locked --all-features

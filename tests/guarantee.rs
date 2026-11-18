@@ -34,7 +34,7 @@ use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::panic::{self, AssertUnwindSafe};
 
 #[cfg(feature = "indexmap")]
-type IndexMap<K, V> = confined::indexmap::IndexMap<K, V, BuildHasherDefault<DefaultHasher>>;
+type IndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<DefaultHasher>>;
 use confined::{Confined, Error, ItemLen, U8MAX, U16MAX, U24MAX, U32MAX};
 
 #[test]

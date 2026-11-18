@@ -4,14 +4,14 @@ version = "0.5.0"
 authors = ["Dr Maxim Orlovsky <orlovsky@ubideco.org>"]
 description = "Confined collections with compile-time size guarantees"
 repository = "https://github.com/rust-amplify/confined"
-homepage = "https://docs.rs/confined"
+documentation = "https://docs.rs/confined"
 keywords = ["generics", "core", "collections", "patterns"]
 categories = ["data-structures", "rust-patterns", "no-std"]
 readme = "README.md"
 license = "Apache-2.0"
 edition = "2024"
 rust-version = "1.100.0"
-exclude = [".github"]
+include = ["Cargo.toml", "README.md", "CHANGELOG.md", "LICENSE", "SECURITY.md", "src/**", "examples/**"]
 
 [lib]
 name = "confined"
@@ -47,3 +47,20 @@ ascii-serde = ["ascii", "serde", "std", "ascii/serde"]
 
 [package.metadata.docs.rs]
 features = ["all"]
+
+# These lints apply to the library, examples, and tests. The library
+# additionally forbids `unsafe` code in `src/lib.rs`; tests use documented
+# `unsafe` blocks for custom test allocators.
+[lints.rust]
+non_ascii_idents = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+mem_forget = "warn"
+todo = "warn"
+undocumented_unsafe_blocks = "warn"
+unimplemented = "warn"
