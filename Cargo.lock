@@ -11,7 +11,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 [[package]]
 name = "amplify_num"
 version = "0.6.0"
-source = "git+https://github.com/rust-amplify/amplify-num?branch=develop#5117b2f7133ba7c23a15a15e163461bbd0bc18ad"
+source = "git+https://github.com/rust-amplify/amplify-num?branch=develop#3adcec5d1bcf54bf33e31c139f0942489ca5a166"
 dependencies = [
  "serde",
 ]
