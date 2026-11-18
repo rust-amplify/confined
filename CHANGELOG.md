@@ -1,10 +1,11 @@
 Change Log
 ==========
 
-0.5.0 (unreleased)
-------------------
+0.5.0
+-----
 
-This version migrates to `collections-traits`, adds explicit allocation features,
+This version is a first release from outside of the original `amplify` crate.
+It migrates to `collections-traits`, adds explicit allocation features,
 allocator-aware and fixed-capacity collections, and requires Rust 1.100.0
 with edition 2024. The changes below are not an audit or validation report;
 resource limitations are documented in [SECURITY.md](./SECURITY.md).

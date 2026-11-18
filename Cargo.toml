@@ -1,6 +1,6 @@
 [package]
 name = "confined"
-version = "0.5.0"
+version = "0.5.0-beta.1"
 authors = ["Dr Maxim Orlovsky <orlovsky@ubideco.org>"]
 description = "Confined collections with compile-time size guarantees"
 repository = "https://github.com/rust-amplify/confined"
@@ -21,7 +21,7 @@ name = "cortex_m"
 required-features = ["heapless"]
 
 [dependencies]
-amplify_num = { git = "https://github.com/rust-amplify/amplify-num", branch = "develop", default-features = false }
+amplify_num = { version = "0.6.0-beta.1", default-features = false }
 collections = { package = "collections-traits", version = "0.1.0", default-features = false }
 
 ascii = { version = "1.1.0", default-features = false, optional = true }

@@ -10,8 +10,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amplify_num"
-version = "0.6.0"
-source = "git+https://github.com/rust-amplify/amplify-num?branch=develop#5117b2f7133ba7c23a15a15e163461bbd0bc18ad"
+version = "0.6.0-beta.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ed6e6f82871ed9f8895b60b8f6e5262151b0b9c28e5bb1bf36555be0c61bb11"
 dependencies = [
  "serde",
 ]
@@ -46,7 +47,7 @@ dependencies = [
 
 [[package]]
 name = "confined"
-version = "0.5.0"
+version = "0.5.0-beta.1"
 dependencies = [
  "amplify_num",
  "ascii",
